@@ -30,12 +30,21 @@ echo "[$(date)] CWD: $PWD"
 
 ## Env
 module purge
-module load miniconda/3-4.11.0
+module load miniconda
 source "$(conda info --base)/etc/profile.d/conda.sh"
-conda activate myenv        # <-- use your actual env name
+# conda activate myenv
 
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
-export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+
+echo "CONDA_PREFIX=$CONDA_PREFIX"
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+unset LD_PRELOAD
+which python && python -c "import sys; print('python exe:', sys.executable)"
+python - <<'PY'
+import os, torch
+print("PyTorch:", torch.__version__, "CUDA?", torch.cuda.is_available())
+print("LD_LIBRARY_PATH head:", os.environ.get("LD_LIBRARY_PATH", "").split(':')[:3])
+PY
+
 
 ## Params
 SEED="${SLURM_ARRAY_TASK_ID}"

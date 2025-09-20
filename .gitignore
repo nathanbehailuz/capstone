@@ -11,3 +11,4 @@ __pycache__/
 *.pywz
 ckpts/
 datasets/pkls/*.pkl
+slurm_out/
