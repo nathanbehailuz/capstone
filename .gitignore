@@ -1,7 +1,6 @@
 venv/
 *.txt
 notes/
-datasets/__pycache__/
 __pycache__/
 *.pyc
 *.pyo
@@ -10,5 +9,4 @@ __pycache__/
 *.pyz
 *.pywz
 ckpts/
-datasets/pkls/*.pkl
 slurm_out/
