@@ -11,3 +11,4 @@ __pycache__/
 ckpts/
 slurm_out/
 datasets/pkls/*.pkl
+results/
