@@ -81,6 +81,23 @@ def get_pretrained_path(paper, dataset):
     path = f"{dir_path}/pretrained/{paper}/{dataset}/best_model"
     return path
 
+def _align_gcn_conv_keys_to_model(model, state_dict):
+    model_sd = model.state_dict()
+    new_sd = {}
+    for k, v in state_dict.items():
+        if k in model_sd and v.shape != model_sd[k].shape:
+            # If it's a 2D weight and the reversed shape matches, transpose it.
+            if v.dim() == 2 and v.shape[::-1] == model_sd[k].shape:
+                print(f"[model_selector] Transposing {k}: {tuple(v.shape)} -> {tuple(model_sd[k].shape)}")
+                new_sd[k] = v.t().contiguous()
+            else:
+                # Keep debugging info but skip incompatible tensors
+                print(f"[model_selector] Shape mismatch (no simple transpose): {k} {tuple(v.shape)} vs {tuple(model_sd[k].shape)} — skipping.")
+                continue
+        else:
+            new_sd[k] = v
+    return new_sd
+
 
 def model_selector(paper, dataset, pretrained=True, return_checkpoint=False):
     """
@@ -102,7 +119,10 @@ def model_selector(paper, dataset, pretrained=True, return_checkpoint=False):
         # Handle compatibility between old and new torch_geometric versions
         state_dict = checkpoint['model_state_dict']
         state_dict = _align_gcn_conv_keys_to_model(model, state_dict)
-        model.load_state_dict(state_dict)
+        missing, unexpected = model.load_state_dict(state_dict, strict=False)
+        print(f"[model_selector] missing keys: {missing}")
+        print(f"[model_selector] unexpected keys: {unexpected}")
+
         print(f"This model obtained: Train Acc: {checkpoint['train_acc']:.4f}, Val Acc: {checkpoint['val_acc']:.4f}, Test Acc: {checkpoint['test_acc']:.4f}.")
         if return_checkpoint:
             return model, checkpoint

@@ -9,7 +9,7 @@
 #SBATCH -n 1
 #SBATCH -c 4
 #SBATCH --mem=24G
-#SBATCH -t 12:00:00
+#SBATCH -t 7:00:00
 #SBATCH --array=0-9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
@@ -23,9 +23,9 @@ cd "${SLURM_SUBMIT_DIR}"
 # Folders for logs & outputs
 mkdir -p slurm_out results
 
-echo "[$(date)] Node: $(hostname)"
-echo "[$(date)] JOBID=$SLURM_JOB_ID  ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID"
-echo "[$(date)] CWD: $PWD"
+# echo "[$(date)] Node: $(hostname)"
+# echo "[$(date)] JOBID=$SLURM_JOB_ID  ARRAY_TASK_ID=$SLURM_ARRAY_TASK_ID"
+# echo "[$(date)] CWD: $PWD"
 
 ## ================== Environment ==================
 module purge
@@ -50,14 +50,14 @@ export CUDA_LAUNCH_BLOCKING=1
 export TORCH_SHOW_CPP_STACKTRACES=1
 export PYTHONNOUSERSITE=1
 
-# Quick print of Python & key libs (no GPU needed)
-"$PYBIN" - <<'PY'
-import sys, numpy, scipy, torch
-print("python:", sys.executable)
-print("numpy:", numpy.__version__)
-print("scipy:", scipy.__version__)
-print("torch:", torch.__version__)
-PY
+
+# "$PYBIN" - <<'PY'
+# import sys, numpy, scipy, torch
+# print("python:", sys.executable)
+# print("numpy:", numpy.__version__)
+# print("scipy:", scipy.__version__)
+# print("torch:", torch.__version__)
+# PY
 
 ## ==================== Params =====================
 SEED="${SLURM_ARRAY_TASK_ID}"
@@ -68,7 +68,7 @@ SIZE_REG=0.01
 SIM_REG=1.0
 RADIUS_PENALTY=0.1
 
-RESULT_FILE="results/${DATASET}_${POLICY,,}_seed${SEED}.txt"
+RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
 
 echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
 
@@ -79,19 +79,19 @@ echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}" | tee -a "$RESULT_F
 srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
 
 # Probe torch CUDA inside the allocation
-srun --gres=gpu:1 bash -lc " \
-  ${PYBIN} - <<'PY'
-import os, torch
-print('torch:', torch.__version__)
-print('torch.version.cuda:', torch.version.cuda)
-print('built_with_cuda:', torch.backends.cuda.is_built())
-print('is_available:', torch.cuda.is_available())
-print('device_count:', torch.cuda.device_count())
-if torch.cuda.is_available():
-    print('current_device:', torch.cuda.current_device())
-    print('name0:', torch.cuda.get_device_name(0))
-PY
-" | tee -a "$RESULT_FILE"
+# srun --gres=gpu:1 bash -lc " \
+#   ${PYBIN} - <<'PY'
+# import os, torch
+# print('torch:', torch.__version__)
+# print('torch.version.cuda:', torch.version.cuda)
+# print('built_with_cuda:', torch.backends.cuda.is_built())
+# print('is_available:', torch.cuda.is_available())
+# print('device_count:', torch.cuda.device_count())
+# if torch.cuda.is_available():
+#     print('current_device:', torch.cuda.current_device())
+#     print('name0:', torch.cuda.get_device_name(0))
+# PY
+# " | tee -a "$RESULT_FILE"
 
 ## ================== TRAINING =====================
 # Launch your script INSIDE the GPU step, using the env's python
