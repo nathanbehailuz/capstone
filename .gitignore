@@ -12,3 +12,4 @@ ckpts/
 slurm_out/
 datasets/pkls/*.pkl
 results/
+/datasets/pkls
