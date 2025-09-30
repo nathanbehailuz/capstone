@@ -1,5 +1,7 @@
 #!/bin/bash
 # File: syn1_ppo.slurm
+ 
+
 
 ## ===================== SLURM =====================
 #SBATCH -J rgx_syn1_ppo
