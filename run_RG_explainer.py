@@ -71,10 +71,17 @@ class Runner:
         self.args = args
         # Load Dataset
         self.graphs, self.nodefeats, ground_truth_labels, self.task = self.load_data()
+        # Move nodefeats to GPU
+        if isinstance(self.nodefeats, list):
+            self.nodefeats = [feat.to(self.device) for feat in self.nodefeats]
+        else:
+            self.nodefeats = self.nodefeats.to(self.device)
         # Store ground truth labels for later use
         self.ground_truth_labels = ground_truth_labels
         # Load pretrained models
         self.trained_model, checkpoint = model_selector.model_selector(args.model, args.dataset, pretrained=True, return_checkpoint=True)
+        # Move model to GPU
+        self.trained_model = self.trained_model.to(self.device)
         # Load ground truth
         self.explanation_labels, explain_eval_seeds = ground_truth_loaders.load_dataset_ground_truth(args.dataset)
         # Load AUC Evaluation
@@ -171,7 +178,7 @@ class Runner:
             self.graphs = Graph(new_graphs)
 
             self.ind_nodefeats = self.nodefeats
-            self.nodefeats = torch.cat(new_node_feats) 
+            self.nodefeats = torch.cat(new_node_feats).to(self.device) 
 
             # graph embedding
             whole_graph_original_preds = [self.trained_model(self.ind_nodefeats[i], self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]]-each_g_start_nid[i])[0] 
