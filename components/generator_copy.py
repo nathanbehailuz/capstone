@@ -885,7 +885,8 @@ class Generator:
             # For now, return uniform bias (no causal information)
             # TODO: Implement full causal bias computation
             # Note: Add +1 for EOS action (model has len(candidates)+1 logits)
-            uniform_bias = torch.ones(len(candidates) + 1, dtype=torch.float32)
+            # Important: Create tensor on the correct device (GPU)
+            uniform_bias = torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device)
             causal_bias.append(uniform_bias)
         
         return causal_bias
