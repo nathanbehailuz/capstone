@@ -10,10 +10,12 @@ def _align_gcn_conv_keys_to_model(model, state_dict):
     """
     Align checkpoint keys for GCNConv layers to match the current torch_geometric version
     used by the instantiated model. Maps between 'conv*.weight' and 'conv*.lin.weight'
-    as needed. Leaves other keys untouched.
+    as needed. Also handles shape mismatches by transposing when appropriate.
     """
     model_keys = set(model.state_dict().keys())
+    model_sd = model.state_dict()
     new_state_dict = {}
+    
     for key, value in state_dict.items():
         new_key = key
         # If checkpoint uses new-style '.lin.weight' but model expects old-style '.weight'
@@ -26,7 +28,20 @@ def _align_gcn_conv_keys_to_model(model, state_dict):
             alt_key = key.replace('.weight', '.lin.weight')
             if alt_key in model_keys and key not in model_keys:
                 new_key = alt_key
-        new_state_dict[new_key] = value
+        
+        # Handle shape mismatches for the aligned key
+        if new_key in model_sd and value.shape != model_sd[new_key].shape:
+            # If it's a 2D weight and the reversed shape matches, transpose it.
+            if value.dim() == 2 and value.shape[::-1] == model_sd[new_key].shape:
+                print(f"[model_selector] Transposing {new_key}: {tuple(value.shape)} -> {tuple(model_sd[new_key].shape)}")
+                new_state_dict[new_key] = value.t().contiguous()
+            else:
+                # Keep debugging info but skip incompatible tensors
+                print(f"[model_selector] Shape mismatch (no simple transpose): {new_key} {tuple(value.shape)} vs {tuple(model_sd[new_key].shape)} — skipping.")
+                continue
+        else:
+            new_state_dict[new_key] = value
+    
     return new_state_dict
 
 def string_to_model(paper, dataset):
@@ -81,22 +96,6 @@ def get_pretrained_path(paper, dataset):
     path = f"{dir_path}/pretrained/{paper}/{dataset}/best_model"
     return path
 
-def _align_gcn_conv_keys_to_model(model, state_dict):
-    model_sd = model.state_dict()
-    new_sd = {}
-    for k, v in state_dict.items():
-        if k in model_sd and v.shape != model_sd[k].shape:
-            # If it's a 2D weight and the reversed shape matches, transpose it.
-            if v.dim() == 2 and v.shape[::-1] == model_sd[k].shape:
-                print(f"[model_selector] Transposing {k}: {tuple(v.shape)} -> {tuple(model_sd[k].shape)}")
-                new_sd[k] = v.t().contiguous()
-            else:
-                # Keep debugging info but skip incompatible tensors
-                print(f"[model_selector] Shape mismatch (no simple transpose): {k} {tuple(v.shape)} vs {tuple(model_sd[k].shape)} — skipping.")
-                continue
-        else:
-            new_sd[k] = v
-    return new_sd
 
 
 def model_selector(paper, dataset, pretrained=True, return_checkpoint=False):
