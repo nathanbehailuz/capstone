@@ -48,6 +48,22 @@ class NodeGCN(torch.nn.Module):
 
         return input_lin
 
+    def get_node_reps(self, x, edge_index, edge_attr, batch):
+        """
+        Extract node-level representations after message passing for causal analysis.
+        
+        Args:
+            x: Node features [num_nodes, node_feat_dim]
+            edge_index: Edge indices [2, num_edges]
+            edge_attr: Edge features [num_edges, edge_feat_dim] (unused for this model)
+            batch: Batch assignment [num_nodes] (unused for this model)
+            
+        Returns:
+            node_representations: [num_nodes, hidden_dim]
+        """
+        # Use the existing embedding method which returns node representations
+        return self.embedding(x, edge_index)
+
 class GraphGCN(torch.nn.Module):
     """
     A graph clasification model for graphs decribed in https://arxiv.org/abs/2011.04573.
@@ -114,3 +130,45 @@ class GraphGCN(torch.nn.Module):
         input_lin = torch.cat([out1, out2], dim=-1)
 
         return input_lin, embed
+
+    def get_node_reps(self, x, edge_index, edge_attr, batch):
+        """
+        Extract node-level representations after message passing for causal analysis.
+        
+        Args:
+            x: Node features [num_nodes, node_feat_dim]
+            edge_index: Edge indices [2, num_edges]
+            edge_attr: Edge features [num_edges, edge_feat_dim] (unused for this model)
+            batch: Batch assignment [num_nodes] (unused for this model)
+            
+        Returns:
+            node_representations: [num_nodes, hidden_dim]
+        """
+        # Use the existing embedding method which returns node representations
+        return self.embedding(x, edge_index)
+
+    def get_graph_rep(self, x, edge_index, edge_attr, batch):
+        """
+        Extract graph-level representations after pooling for causal analysis.
+        
+        Args:
+            x: Node features [num_nodes, node_feat_dim]
+            edge_index: Edge indices [2, num_edges]
+            edge_attr: Edge features [num_edges, edge_feat_dim] (unused for this model)
+            batch: Batch assignment [num_nodes]
+            
+        Returns:
+            graph_representations: [batch_size, hidden_dim]
+        """
+        if batch is None:
+            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+        
+        # Get node representations
+        node_reps = self.embedding(x, edge_index)
+        
+        # Apply global pooling (mean and max)
+        out1 = global_max_pool(node_reps, batch)
+        out2 = global_mean_pool(node_reps, batch)
+        graph_rep = torch.cat([out1, out2], dim=-1)
+        
+        return graph_rep

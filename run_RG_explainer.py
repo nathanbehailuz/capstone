@@ -15,6 +15,7 @@ from datasets import dataset_loaders, ground_truth_loaders
 from models import model_selector
 from evaluation.AUCEvaluation import AUCEvaluation
 import torch_geometric as ptgeom
+from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer
 
 
 def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn, dataset, writer, use_set=True):
@@ -226,6 +227,9 @@ class Runner:
         self.g = self.init_g()
         if self.task == "graph_task":
             self.l = self.init_l(g_embeds, n_embeds)
+        
+        # Initialize causal mechanism if enabled
+        self.init_causal_mechanism()
 
     def close(self):
         self.writer.close()
@@ -266,6 +270,30 @@ class Runner:
             g_model = Agent(args.hidden_size, args.with_attr).to(device)
 
         g_optimizer = optim.Adam(g_model.parameters(), lr=args.g_lr)
+        
+        # Initialize causal mechanism parameters
+        use_causal = getattr(args, 'use_causal', False)
+        causal_weight = getattr(args, 'causal_weight', 0.5)
+        causal_explainer = None
+        
+        if use_causal:
+            # Determine which causal explainer to use based on task
+            if self.task == "node_task":
+                causal_explainer = NodeLevelCausalExplainer(
+                    gnn_model=self.trained_model,
+                    num_labels=len(torch.unique(torch.tensor(self.explanation_labels))),
+                    hidden_size=args.hidden_size,
+                    use_edge_attr=args.with_attr
+                ).to(device)
+            else:  # graph_task
+                causal_explainer = GraphLevelCausalExplainer(
+                    gnn_model=self.trained_model,
+                    num_labels=len(torch.unique(torch.tensor(self.explanation_labels))),
+                    hidden_size=args.hidden_size,
+                    use_edge_attr=args.with_attr
+                ).to(device)
+            print(f"[CAUSAL] Initialized {type(causal_explainer).__name__} with weight {causal_weight}")
+        
         g = Generator(self.graphs, g_model, g_optimizer, device,
                       entropy_coef=args.entropy_coef,
                       n_rollouts=args.n_rollouts,
@@ -280,9 +308,17 @@ class Runner:
                       frontier_shaping_beta=args.frontier_shaping_beta,
                       entropy_decay_start=args.entropy_decay_start,
                       entropy_decay_end=args.entropy_decay_end,
-                      entropy_decay_final=args.entropy_decay_final)
+                      entropy_decay_final=args.entropy_decay_final,
+                      # Causal mechanism parameters
+                      use_causal=use_causal,
+                      causal_explainer=causal_explainer,
+                      causal_weight=causal_weight)
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
+        
+        # Initialize causal reward calculator
+        g.init_causal_reward_calculator(self.trained_model)
+        
         return g
 
 
@@ -290,6 +326,21 @@ class Runner:
         args = self.args
         l = Locator(g_embeds, n_embeds, self.ind_subgraphs, args.l_lr, self.graphs.isolated_nodes, device=self.device)
         return l
+
+    def init_causal_mechanism(self):
+        """
+        Initialize causal mechanism components.
+        This method sets up the causal explainer and integrates it with the system.
+        """
+        args = self.args
+        use_causal = getattr(args, 'use_causal', False)
+        
+        if use_causal:
+            print("[CAUSAL] Causal mechanism enabled")
+            print(f"[CAUSAL] Task type: {self.task}")
+            print(f"[CAUSAL] Causal weight: {getattr(args, 'causal_weight', 0.5)}")
+        else:
+            print("[CAUSAL] Causal mechanism disabled")
 
 
     def prepare_mask(self, o_g, selected_nodes):
@@ -465,6 +516,57 @@ class Runner:
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
             v += args.sim_reg * torch.stack(sim_loss) 
         
+        # ========== CAUSAL MECHANISM INTEGRATION ==========
+        # Add causal reward if causal mechanism is enabled
+        if hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
+            causal_rewards = []
+            for i, x in enumerate(cs):
+                # Get target class for this subgraph
+                if self.task == "node_task":
+                    target_y = self.original_preds[x[0]].item()
+                else:
+                    g_id = self.get_g_id(x, True)
+                    target_y = self.original_preds[g_id].item()
+                
+                # Create a simple graph object for causal analysis
+                # This is a simplified version - in practice, you'd need proper PyG Data objects
+                class SimpleGraph:
+                    def __init__(self, edge_index, x, batch=None, y=None):
+                        self.edge_index = edge_index
+                        self.x = x
+                        self.batch = batch
+                        self.y = y
+                
+                # Create graph object for causal analysis
+                graph_obj = SimpleGraph(
+                    edge_index=batch_g[i],
+                    x=self.nodefeats if self.task == "node_task" else self.ind_nodefeats[self.get_g_id(x, True)],
+                    batch=torch.zeros(batch_g[i].size(1), dtype=torch.long) if self.task == "node_task" else None,
+                    y=torch.tensor([target_y])
+                )
+                
+                # Compute causal reward
+                try:
+                    causal_reward = self.g.causal_reward_calculator.compute_causal_reward(
+                        graph_obj, x, target_y
+                    )
+                    causal_rewards.append(causal_reward)
+                except Exception as e:
+                    # Fallback to zero causal reward if computation fails
+                    print(f"[CAUSAL] Warning: Failed to compute causal reward: {e}")
+                    causal_rewards.append(0.0)
+            
+            # Combine original reward with causal reward
+            causal_weight = getattr(self.args, 'causal_weight', 0.5)
+            original_scores = -v.detach().numpy()  # Convert back to positive scores
+            causal_scores = np.array(causal_rewards)
+            
+            # Combine scores with weighted average
+            combined_scores = (1 - causal_weight) * original_scores + causal_weight * causal_scores
+            
+            print(f"[CAUSAL] Original scores: {np.mean(original_scores):.4f}, Causal scores: {np.mean(causal_scores):.4f}, Combined: {np.mean(combined_scores):.4f}")
+            
+            return combined_scores
         
         return -v.detach().numpy()
 
@@ -715,6 +817,12 @@ if __name__ == '__main__':
     parser.add_argument('--entropy_decay_start', type=float, default=1e-3)
     parser.add_argument('--entropy_decay_end', type=float, default=1e-4)
     parser.add_argument('--entropy_decay_final', type=float, default=0.0)
+
+    # Causal mechanism parameters
+    parser.add_argument('--use_causal', action='store_true', default=False,
+                       help='Enable causal mechanism for subgraph generation')
+    parser.add_argument('--causal_weight', type=float, default=0.5,
+                       help='Weight for causal term in reward function (0.0 to 1.0)')
 
     args = parser.parse_args()
     seed_all(args.seed)

@@ -7,6 +7,7 @@ from torch import nn
 
 from .graph import Graph
 from .generator_core import GraphConv, Agent
+from .causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer, CausalRewardCalculator
 
 
 class ExpansionEnv:
@@ -96,7 +97,11 @@ class Generator:
                  max_size: int = 25,
                  k: int = 3,
                  alpha: float = 0.85,
-                 max_reward: float = 1.):
+                 max_reward: float = 1.,
+                 # Causal mechanism parameters
+                 use_causal: bool = False,
+                 causal_explainer: Optional[Union[NodeLevelCausalExplainer, GraphLevelCausalExplainer]] = None,
+                 causal_weight: float = 0.5):
         self.graph = graph
         self.model = model
         self.optimizer = optimizer
@@ -108,6 +113,15 @@ class Generator:
         self.conv = GraphConv(graph, k, alpha)
         self.nodefeats = None
         self.old_logps = None
+
+        # Causal mechanism integration
+        self.use_causal = use_causal
+        self.causal_explainer = causal_explainer
+        self.causal_weight = causal_weight
+        self.causal_reward_calculator = None
+        if self.use_causal and self.causal_explainer is not None:
+            # This will be initialized when we have access to the GNN model
+            pass
 
         if device is None:
             self.device = torch.device('cpu')
@@ -131,6 +145,24 @@ class Generator:
         self.nodefeats = x.numpy()
         #self.nodefeats = x.astype(np.float32)
 
+    def init_causal_reward_calculator(self, gnn_model):
+        """
+        Initialize the causal reward calculator with the GNN model.
+        This should be called after the GNN model is available.
+        
+        Args:
+            gnn_model: The trained GNN model for causal analysis
+        """
+        if self.use_causal and self.causal_explainer is not None:
+            self.causal_reward_calculator = CausalRewardCalculator(
+                gnn_model=gnn_model,
+                causal_explainer=self.causal_explainer,
+                causal_weight=self.causal_weight
+            )
+            print(f"[CAUSAL] Initialized causal reward calculator with weight {self.causal_weight}")
+        else:
+            print("[CAUSAL] Causal mechanism not enabled")
+
     def generate(self, seeds: List[int], max_size: Optional[int] = None):
         max_size = self.max_size if max_size is None else max_size
         env = ExpansionEnv(self.graph, [[s] for s in seeds], max_size)
@@ -149,8 +181,16 @@ class Generator:
             valid_index = env.valid_index
             *model_inputs, batch_candidates = self._prepare_inputs(valid_index, env.trajectories, z_nodes, z_seeds)
             batch_logits, values = self.model(*model_inputs)
+            
+            # ========== CAUSAL MECHANISM INTEGRATION ==========
+            causal_bias = None
+            if self.use_causal and self.causal_explainer is not None:
+                # Compute causal importance for current state
+                causal_bias = self._compute_causal_bias(valid_index, env.trajectories, batch_candidates)
+            
             # Action masking: ensure only valid candidates are sampled
-            actions, logps, entropys = self._sample_actions(batch_logits)
+            # Now with optional causal bias
+            actions, logps, entropys = self._sample_actions(batch_logits, causal_bias)
             new_nodes = [x[i] if i < len(x) else 'EOS' for i, x in zip(actions, batch_candidates)]
             delta_x_nodes = env.step(new_nodes, valid_index)
             for i, v1, v2, h in zip(valid_index, logps, values, entropys):
@@ -161,6 +201,36 @@ class Generator:
         logps, values, entropys = [nn.utils.rnn.pad_sequence([torch.stack(x) for x in episode_xs], True)
                                    for episode_xs in (episode_logps, episode_values, episode_entropys)]
         return env.trajectories, logps.to(self.device), values.to(self.device), entropys.to(self.device)
+
+    def _compute_causal_bias(self, valid_index: List[int], trajectories: List[List[int]], batch_candidates: List[List[int]]):
+        """
+        Compute causal bias for action selection.
+        
+        Args:
+            valid_index: List of valid trajectory indices
+            trajectories: Current trajectories
+            batch_candidates: Available candidates for each trajectory
+            
+        Returns:
+            causal_bias: List of causal importance scores for each valid trajectory
+        """
+        if not self.use_causal or self.causal_explainer is None:
+            return None
+        
+        causal_bias = []
+        for i, candidates in zip(valid_index, batch_candidates):
+            # For each candidate, we need to compute its causal importance
+            # This is a simplified version - in practice, you'd need to:
+            # 1. Create a temporary graph state with the candidate added
+            # 2. Compute causal importance using the explainer
+            # 3. Return importance scores for each candidate
+            
+            # For now, return uniform bias (no causal information)
+            # TODO: Implement full causal bias computation
+            uniform_bias = torch.ones(len(candidates), dtype=torch.float32)
+            causal_bias.append(uniform_bias)
+        
+        return causal_bias
 
     def _sample_rollouts_loop(self, prefix: List[List[int]], max_size: int):
         max_size = max([len(x) for x in prefix]) if max_size is None else max_size
@@ -456,14 +526,36 @@ class Generator:
         indptr = np.array(indptr)
         return vals_attr, vals_seed, vals_node, indptr, batch_candidates
 
-    def _sample_actions(self, batch_logits: List) -> (List, List, List):
+    def _sample_actions(self, batch_logits: List, causal_bias: Optional[List] = None) -> (List, List, List):
+        """
+        Sample actions with optional causal bias.
+        
+        Args:
+            batch_logits: List of logits for each batch element
+            causal_bias: Optional list of causal importance scores to bias action selection
+            
+        Returns:
+            actions: Selected action indices
+            logps: Log probabilities of selected actions
+            entropys: Entropy values
+        """
         batch = []
-        for logits in batch_logits:
+        for i, logits in enumerate(batch_logits):
             # logits are expected to be log-probabilities (log-softmax output)
             ps = torch.exp(logits)
-            entropy = -(ps * logits).sum()
+            
+            # Apply causal bias if available
+            if causal_bias is not None and i < len(causal_bias):
+                # Add causal importance as bias to logits
+                causal_logits = torch.log(causal_bias[i] + 1e-8)  # Convert to log space
+                # Combine original logits with causal bias
+                biased_logits = logits + 0.1 * causal_logits  # Weight the causal bias
+                ps = torch.exp(biased_logits)
+                ps = ps / ps.sum()  # Renormalize
+            
+            entropy = -(ps * torch.log(ps + 1e-8)).sum()
             action = torch.multinomial(ps, 1).item()
-            logp = logits[action]
+            logp = logits[action]  # Use original logits for policy gradient
             batch.append([action, logp, entropy])
         actions, logps, entropys = zip(*batch)
         actions = np.array(actions)
