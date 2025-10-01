@@ -118,17 +118,23 @@ class Runner:
             # Move graph edge_index to GPU
             self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
-            whole_graph_original_preds = self.trained_model(self.nodefeats, self.graphs.edge_index)
+            edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
+            whole_graph_original_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
             print("Prediction Error for Whole Graph:", torch.sum(torch.abs(whole_graph_original_preds - ground_truth_labels)).item()/len(whole_graph_original_preds), flush=True)
 
-            subg_original_preds = [self.trained_model(self.nodefeats, self.subgraphs[i])[es] for i, es in enumerate(self.eval_seeds)]
+            subg_original_preds = []
+            for i, es in enumerate(self.eval_seeds):
+                edge_weights = torch.ones(self.subgraphs[i].size(1), device=self.subgraphs[i].device)
+                pred = self.trained_model(self.nodefeats, self.subgraphs[i], edge_weights)[es]
+                subg_original_preds.append(pred)
             subg_original_preds = torch.stack(subg_original_preds)
             subg_original_preds = torch.argmax(subg_original_preds, 1)
             print("Prediction Error for Eval Seeds:", torch.sum(torch.abs(subg_original_preds-ground_truth_labels[self.eval_seeds])).item()/len(subg_original_preds), flush=True)
 
             self.original_preds = whole_graph_original_preds
-            self.original_embeds = self.trained_model.embedding(self.nodefeats, self.graphs.edge_index)            
+            edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
+            self.original_embeds = self.trained_model.embedding(self.nodefeats, self.graphs.edge_index, edge_weights)            
 
             print("N-hop", self.args.n_hop, flush=True)
             print("Max Size in SG", max_size_in_sg, flush=True)
@@ -186,21 +192,32 @@ class Runner:
             self.nodefeats = torch.cat(new_node_feats).to(self.device) 
 
             # graph embedding
-            whole_graph_original_preds = [self.trained_model(self.ind_nodefeats[i], self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]]-each_g_start_nid[i])[0] 
-                                              for i in range(len(each_g_start_nid))]
+            whole_graph_original_preds = []
+            for i in range(len(each_g_start_nid)):
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
+                # Create edge weights on the same device as edge_index
+                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                pred = self.trained_model(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                whole_graph_original_preds.append(pred)
             whole_graph_original_preds = torch.stack(whole_graph_original_preds)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
             ground_truth_labels = torch.argmax(ground_truth_labels, 1)
             print("Prediction Error for Graphs:", torch.sum(torch.abs(whole_graph_original_preds - ground_truth_labels)).item()/len(whole_graph_original_preds), flush=True)
 
-            g_embeds = [self.trained_model.graph_embedding(self.ind_nodefeats[i], self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]]-each_g_start_nid[i])[0] 
-                                              for i in range(len(each_g_start_nid))]
+            g_embeds = []
+            for i in range(len(each_g_start_nid)):
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
+                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                g_embed = self.trained_model.graph_embedding(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
 
             # node embedding
             n_embeds = []
             for i in range(len(each_g_start_nid)):
-                temp = self.trained_model.embedding(self.ind_nodefeats[i], self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]]-each_g_start_nid[i])
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
+                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                temp = self.trained_model.embedding(self.ind_nodefeats[i], edge_idx, edge_weights)
                 n_embeds.append(temp[0:len(new_graphs_node[i])])
             n_embeds = torch.cat(n_embeds)
 
@@ -394,11 +411,20 @@ class Runner:
         
         # Prediction loss
         if self.task == "node_task":
-            masked_preds = [self.trained_model(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
+            masked_preds = []
+            for i, g in enumerate(batch_g):
+                edge_weights = torch.ones(g.size(1), device=g.device)
+                pred = self.trained_model(self.nodefeats, g, edge_weights)[cs[i][0]]
+                masked_preds.append(pred)
             original_preds = [self.original_preds[x[0]] for i, x in enumerate(cs)]
         else:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
-            masked_preds = [self.trained_model(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
+            masked_preds = []
+            for g_id, g in zip(batch_g_id, batch_g):
+                edge_idx = g - self.each_g_start_nid[g_id]
+                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
         
 
@@ -428,11 +454,20 @@ class Runner:
         # Similarity loss
         if args.sim_reg > 0:
             if self.task == "node_task":
-                masked_embeds = [self.trained_model.embedding(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
+                masked_embeds = []
+                for i, g in enumerate(batch_g):
+                    edge_weights = torch.ones(g.size(1), device=g.device)
+                    embed = self.trained_model.embedding(self.nodefeats, g, edge_weights)[cs[i][0]]
+                    masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
             else:
-                masked_embeds = [self.trained_model.graph_embedding(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
+                masked_embeds = []
+                for g_id, g in zip(batch_g_id, batch_g):
+                    edge_idx = g - self.each_g_start_nid[g_id]
+                    edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
             sim_loss = sim_loss.detach().numpy()
@@ -511,11 +546,20 @@ class Runner:
         
         # Prediction loss
         if self.task == "node_task":
-            masked_preds = [self.trained_model(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
+            masked_preds = []
+            for i, g in enumerate(batch_g):
+                edge_weights = torch.ones(g.size(1), device=g.device)
+                pred = self.trained_model(self.nodefeats, g, edge_weights)[cs[i][0]]
+                masked_preds.append(pred)
             original_preds = [self.original_preds[x[0]] for i, x in enumerate(cs)]
         else:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
-            masked_preds = [self.trained_model(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
+            masked_preds = []
+            for g_id, g in zip(batch_g_id, batch_g):
+                edge_idx = g - self.each_g_start_nid[g_id]
+                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
 
         masked_preds = torch.stack(masked_preds).squeeze()
@@ -534,10 +578,19 @@ class Runner:
         # Similarity loss
         if args.sim_reg > 0:
             if self.task == "node_task":
-                masked_embeds = [self.trained_model.embedding(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
+                masked_embeds = []
+                for i, g in enumerate(batch_g):
+                    edge_weights = torch.ones(g.size(1), device=g.device)
+                    embed = self.trained_model.embedding(self.nodefeats, g, edge_weights)[cs[i][0]]
+                    masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
             else:
-                masked_embeds = [self.trained_model.graph_embedding(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
+                masked_embeds = []
+                for g_id, g in zip(batch_g_id, batch_g):
+                    edge_idx = g - self.each_g_start_nid[g_id]
+                    edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
             v += args.sim_reg * torch.stack(sim_loss) 
         
