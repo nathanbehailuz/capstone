@@ -819,7 +819,7 @@ if __name__ == '__main__':
     parser.add_argument('--entropy_decay_final', type=float, default=0.0)
 
     # Causal mechanism parameters
-    parser.add_argument('--use_causal', action='store_true', default=False,
+    parser.add_argument('--use_causal', action='store_true', default=True,
                        help='Enable causal mechanism for subgraph generation')
     parser.add_argument('--causal_weight', type=float, default=0.5,
                        help='Weight for causal term in reward function (0.0 to 1.0)')

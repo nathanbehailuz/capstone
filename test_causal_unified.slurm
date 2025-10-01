@@ -102,6 +102,8 @@ for dataset in "${!DATASETS[@]}"; do
         --n_epochs "$n_epochs" \
         --size_reg "$size_reg" \
         --sim_reg "$sim_reg" \
+        --use_causal True \
+        --causal_weight 0.2 \
         --radius_penalty "$radius_penalty" \
         >> "$UNIFIED_RESULT_FILE" 2>&1
     
