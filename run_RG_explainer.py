@@ -100,7 +100,8 @@ class Runner:
                 else:
                     gt_graph = torch.LongTensor(self.graphs)
                 _, subgraph_edge, *_ = ptgeom.utils.k_hop_subgraph(seed_node, self.args.n_hop, gt_graph)
-                self.subgraphs.append(subgraph_edge)
+                # Move subgraph edge_index to GPU
+                self.subgraphs.append(subgraph_edge.to(self.device))
 
             self.pretrain_nodes = []
             self.pretrain_eval_nodes = []
@@ -114,6 +115,8 @@ class Runner:
             self.pretrain_nodes = np.array(self.pretrain_nodes, dtype=object)
 
             self.graphs = Graph(self.graphs)
+            # Move graph edge_index to GPU
+            self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
             whole_graph_original_preds = self.trained_model(self.nodefeats, self.graphs.edge_index)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
@@ -176,6 +179,8 @@ class Runner:
             each_g_start_eid.append(len(new_graphs_0))
             new_graphs = np.array([new_graphs_0, new_graphs_1])
             self.graphs = Graph(new_graphs)
+            # Move graph edge_index to GPU
+            self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
             self.ind_nodefeats = self.nodefeats
             self.nodefeats = torch.cat(new_node_feats).to(self.device) 
