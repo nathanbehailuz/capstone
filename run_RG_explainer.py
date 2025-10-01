@@ -71,6 +71,8 @@ class Runner:
         self.args = args
         # Load Dataset
         self.graphs, self.nodefeats, ground_truth_labels, self.task = self.load_data()
+        # Store ground truth labels for later use
+        self.ground_truth_labels = ground_truth_labels
         # Load pretrained models
         self.trained_model, checkpoint = model_selector.model_selector(args.model, args.dataset, pretrained=True, return_checkpoint=True)
         # Load ground truth
@@ -277,22 +279,33 @@ class Runner:
         causal_explainer = None
         
         if use_causal:
+            # Determine number of classes from ground truth labels
+            if self.task == "node_task":
+                # For node tasks, ground_truth_labels is 1D
+                num_classes = len(torch.unique(self.ground_truth_labels))
+            else:  # graph_task
+                # For graph tasks, ground_truth_labels may be one-hot encoded
+                if len(self.ground_truth_labels.shape) == 1:
+                    num_classes = len(torch.unique(self.ground_truth_labels))
+                else:
+                    num_classes = self.ground_truth_labels.shape[1]
+            
             # Determine which causal explainer to use based on task
             if self.task == "node_task":
                 causal_explainer = NodeLevelCausalExplainer(
                     gnn_model=self.trained_model,
-                    num_labels=len(torch.unique(torch.tensor(self.explanation_labels))),
+                    num_labels=num_classes,
                     hidden_size=args.hidden_size,
                     use_edge_attr=args.with_attr
                 ).to(device)
             else:  # graph_task
                 causal_explainer = GraphLevelCausalExplainer(
                     gnn_model=self.trained_model,
-                    num_labels=len(torch.unique(torch.tensor(self.explanation_labels))),
+                    num_labels=num_classes,
                     hidden_size=args.hidden_size,
                     use_edge_attr=args.with_attr
                 ).to(device)
-            print(f"[CAUSAL] Initialized {type(causal_explainer).__name__} with weight {causal_weight}")
+            print(f"[CAUSAL] Initialized {type(causal_explainer).__name__} with {num_classes} classes, weight {causal_weight}")
         
         g = Generator(self.graphs, g_model, g_optimizer, device,
                       entropy_coef=args.entropy_coef,
