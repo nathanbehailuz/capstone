@@ -655,19 +655,22 @@ class Runner:
         
         # ========== CAUSAL MECHANISM INTEGRATION ==========
         # Add causal reward if causal mechanism is enabled
-        if hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
+        # Temporarily disabled to debug CUDA assertion error
+        if False and hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
             causal_rewards = []
             for i, x in enumerate(cs):
                 # Get target class for this subgraph
                 if self.task == "node_task":
-                    if x[0] < len(self.original_preds):
+                    print(f"[CAUSAL] Debug: node_id={x[0]}, original_preds_len={len(self.original_preds)}, x={x}")
+                    if 0 <= x[0] < len(self.original_preds):
                         target_y = self.original_preds[x[0]].item()
                     else:
                         print(f"[CAUSAL] Warning: node_id {x[0]} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
                         target_y = 0
                 else:
                     g_id = self.get_g_id(x, True)
-                    if g_id < len(self.original_preds):
+                    print(f"[CAUSAL] Debug: g_id={g_id}, original_preds_len={len(self.original_preds)}, x={x}")
+                    if 0 <= g_id < len(self.original_preds):
                         target_y = self.original_preds[g_id].item()
                     else:
                         print(f"[CAUSAL] Warning: g_id {g_id} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
