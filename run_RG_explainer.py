@@ -453,13 +453,13 @@ class Runner:
         original_preds = torch.stack(original_preds)
 
         prediction_loss = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
-        prediction_loss = prediction_loss.detach().numpy()
+        prediction_loss = prediction_loss.detach().cpu().numpy()
 
 
         # Size loss
         if args.size_reg > 0:
             size_loss = args.size_reg * torch.FloatTensor([g.size()[1] for g in batch_g])
-            size_loss = size_loss.detach().numpy()
+            size_loss = size_loss.detach().cpu().numpy()
         else:
             size_loss = np.array([0.0]*len(prediction_loss))
 
@@ -467,7 +467,7 @@ class Runner:
         # Radius Penalty
         if args.radius_penalty > 0:
             radius_p = args.radius_penalty * torch.FloatTensor([self.graphs.subgraph_depth(x) for x in cs])
-            radius_p = radius_p.detach().numpy()
+            radius_p = radius_p.detach().cpu().numpy()
         else:
             radius_p = np.array([0.0]*len(prediction_loss))
 
@@ -492,7 +492,7 @@ class Runner:
                     masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
-            sim_loss = sim_loss.detach().numpy()
+            sim_loss = sim_loss.detach().cpu().numpy()
         else:
             sim_loss = np.array([0.0]*len(prediction_loss))
                 
@@ -679,7 +679,7 @@ class Runner:
             
             # Combine original reward with causal reward
             causal_weight = getattr(self.args, 'causal_weight', 0.5)
-            original_scores = -v.detach().numpy()  # Convert back to positive scores
+            original_scores = -v.detach().cpu().numpy()  # Convert back to positive scores
             causal_scores = np.array(causal_rewards)
             
             # Combine scores with weighted average
@@ -689,7 +689,7 @@ class Runner:
             
             return combined_scores
         
-        return -v.detach().numpy()
+        return -v.detach().cpu().numpy()
 
 
     def save(self, fname):

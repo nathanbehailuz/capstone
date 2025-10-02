@@ -31,8 +31,8 @@ def evaluation_auc_graph(explanations, explanation_labels, indices):
     for idx, n in enumerate(indices): # Use idx for explanation list and indices for ground truth list
 
         # Select explanation
-        mask = explanations[idx][1].detach().numpy()
-        graph = explanations[idx][0].detach().numpy()
+        mask = explanations[idx][1].detach().cpu().numpy()
+        graph = explanations[idx][0].detach().cpu().numpy()
 
         # Select ground truths
         edge_list = explanation_labels[0][n]
