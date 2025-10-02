@@ -189,26 +189,30 @@ class Runner:
             self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
             self.ind_nodefeats = self.nodefeats
+            # Ensure all individual node features are on the correct device
+            self.ind_nodefeats = [feat.to(self.device) for feat in self.ind_nodefeats]
             self.nodefeats = torch.cat(new_node_feats).to(self.device) 
 
             # graph embedding
             whole_graph_original_preds = []
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
+                edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
                 # Create edge weights on the same device as edge_index
-                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                pred = self.trained_model(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                pred = self.trained_model(self.ind_nodefeats[i].to(self.device), edge_idx, edge_weights)[0]
                 whole_graph_original_preds.append(pred)
             whole_graph_original_preds = torch.stack(whole_graph_original_preds)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
-            ground_truth_labels = torch.argmax(ground_truth_labels, 1)
+            ground_truth_labels = torch.argmax(ground_truth_labels.to(self.device), 1)
             print("Prediction Error for Graphs:", torch.sum(torch.abs(whole_graph_original_preds - ground_truth_labels)).item()/len(whole_graph_original_preds), flush=True)
 
             g_embeds = []
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
-                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                g_embed = self.trained_model.graph_embedding(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                g_embed = self.trained_model.graph_embedding(self.ind_nodefeats[i].to(self.device), edge_idx, edge_weights)[0]
                 g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
 
@@ -216,8 +220,9 @@ class Runner:
             n_embeds = []
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
-                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                temp = self.trained_model.embedding(self.ind_nodefeats[i], edge_idx, edge_weights)
+                edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                temp = self.trained_model.embedding(self.ind_nodefeats[i].to(self.device), edge_idx, edge_weights)
                 n_embeds.append(temp[0:len(new_graphs_node[i])])
             n_embeds = torch.cat(n_embeds)
 
@@ -422,8 +427,9 @@ class Runner:
             masked_preds = []
             for g_id, g in zip(batch_g_id, batch_g):
                 edge_idx = g - self.each_g_start_nid[g_id]
-                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                pred = self.trained_model(self.ind_nodefeats[g_id].to(self.device), edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
         
@@ -465,8 +471,9 @@ class Runner:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g - self.each_g_start_nid[g_id]
-                    edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                    edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id].to(self.device), edge_idx, edge_weights)
                     masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
@@ -557,8 +564,9 @@ class Runner:
             masked_preds = []
             for g_id, g in zip(batch_g_id, batch_g):
                 edge_idx = g - self.each_g_start_nid[g_id]
-                edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                pred = self.trained_model(self.ind_nodefeats[g_id].to(self.device), edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
 
@@ -588,8 +596,9 @@ class Runner:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g - self.each_g_start_nid[g_id]
-                    edge_weights = torch.ones(edge_idx.size(1), device=edge_idx.device)
-                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    edge_idx = edge_idx.to(self.device)  # Ensure edge_idx is on the correct device
+                    edge_weights = torch.ones(edge_idx.size(1), device=self.device)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id].to(self.device), edge_idx, edge_weights)
                     masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
             v += args.sim_reg * torch.stack(sim_loss) 
@@ -618,9 +627,9 @@ class Runner:
                 # Create graph object for causal analysis
                 graph_obj = SimpleGraph(
                     edge_index=batch_g[i],
-                    x=self.nodefeats if self.task == "node_task" else self.ind_nodefeats[self.get_g_id(x, True)],
-                    batch=torch.zeros(batch_g[i].size(1), dtype=torch.long) if self.task == "node_task" else None,
-                    y=torch.tensor([target_y])
+                    x=self.nodefeats if self.task == "node_task" else self.ind_nodefeats[self.get_g_id(x, True)].to(self.device),
+                    batch=torch.zeros(batch_g[i].size(1), dtype=torch.long, device=self.device) if self.task == "node_task" else None,
+                    y=torch.tensor([target_y], device=self.device)
                 )
                 
                 # Compute causal reward
