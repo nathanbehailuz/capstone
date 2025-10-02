@@ -201,9 +201,20 @@ class Runner:
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
+                
+                # Find unique nodes referenced by edges
+                if edge_idx.size(1) > 0:  # If there are edges
+                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
+                    max_node_in_edges = int(unique_nodes.max()) + 1
+                else:
+                    max_node_in_edges = 0
+                
+                # Only pass node features for nodes that are actually referenced
+                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
+                
                 # Create edge weights on the same device as edge_index
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                pred = self.trained_model(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                pred = self.trained_model(node_feats_subset, edge_idx, edge_weights)[0]
                 whole_graph_original_preds.append(pred)
             whole_graph_original_preds = torch.stack(whole_graph_original_preds)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
@@ -214,8 +225,17 @@ class Runner:
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
+                
+                # Find unique nodes referenced by edges
+                if edge_idx.size(1) > 0:
+                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
+                    max_node_in_edges = int(unique_nodes.max()) + 1
+                else:
+                    max_node_in_edges = 0
+                
+                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                g_embed = self.trained_model.graph_embedding(self.ind_nodefeats[i], edge_idx, edge_weights)[0]
+                g_embed = self.trained_model.graph_embedding(node_feats_subset, edge_idx, edge_weights)[0]
                 g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
 
@@ -224,9 +244,18 @@ class Runner:
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
+                
+                # Find unique nodes referenced by edges
+                if edge_idx.size(1) > 0:
+                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
+                    max_node_in_edges = int(unique_nodes.max()) + 1
+                else:
+                    max_node_in_edges = 0
+                
+                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                temp = self.trained_model.embedding(self.ind_nodefeats[i], edge_idx, edge_weights)
-                n_embeds.append(temp[0:len(new_graphs_node[i])])
+                temp = self.trained_model.embedding(node_feats_subset, edge_idx, edge_weights)
+                n_embeds.append(temp[0:min(max_node_in_edges, len(new_graphs_node[i]))])
             n_embeds = torch.cat(n_embeds)
 
             # isolated nodes
@@ -431,7 +460,8 @@ class Runner:
             for g_id, g in zip(batch_g_id, batch_g):
                 edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                pred = self.trained_model(node_feats, edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
         
@@ -474,7 +504,8 @@ class Runner:
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
                     edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                    embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
@@ -540,6 +571,18 @@ class Runner:
                 print("Nodes do not belong to one graph!")
 
         return self.n_to_g_index[nodes[0]]
+    
+    def get_node_features_for_edges(self, g_id, edge_idx):
+        """
+        Get the appropriate node features based on which nodes are referenced in the edge index.
+        This handles the case where edges only reference a subset of nodes.
+        """
+        if edge_idx.size(1) > 0:
+            unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
+            max_node_in_edges = int(unique_nodes.max()) + 1
+        else:
+            max_node_in_edges = 0
+        return self.ind_nodefeats[g_id][:max_node_in_edges]
 
     def prepare_graph(self, idx, selected_nodes):
         selected_nodes = list(selected_nodes)
@@ -566,7 +609,8 @@ class Runner:
             for g_id, g in zip(batch_g_id, batch_g):
                 edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                pred = self.trained_model(node_feats, edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
 
@@ -597,7 +641,8 @@ class Runner:
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
                     edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
-                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)
+                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                    embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
                 sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
             v += args.sim_reg * torch.stack(sim_loss) 
