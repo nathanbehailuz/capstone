@@ -188,9 +188,12 @@ class Runner:
             # Move graph edge_index to GPU
             self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
-            self.ind_nodefeats = self.nodefeats
-            # Ensure all individual node features are on the correct device
-            self.ind_nodefeats = [feat.to(self.device) for feat in self.ind_nodefeats]
+            # Store sliced node features (only actual nodes, not padded) for each graph
+            self.ind_nodefeats = []
+            for i in range(len(self.nodefeats)):
+                actual_nodes_count = each_g_actual_nodes[i]
+                self.ind_nodefeats.append(self.nodefeats[i][0:actual_nodes_count].to(self.device))
+            
             self.nodefeats = torch.cat(new_node_feats).to(self.device) 
 
             # graph embedding
