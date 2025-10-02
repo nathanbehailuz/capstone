@@ -196,21 +196,18 @@ class Runner:
             
             self.nodefeats = torch.cat(new_node_feats).to(self.device) 
 
+            # Store helper variables for later use
+            self.each_g_start_nid = each_g_start_nid
+            self.each_g_start_eid = each_g_start_eid
+            
             # graph embedding
             whole_graph_original_preds = []
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
                 
-                # Find unique nodes referenced by edges
-                if edge_idx.size(1) > 0:  # If there are edges
-                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
-                    max_node_in_edges = int(unique_nodes.max()) + 1
-                else:
-                    max_node_in_edges = 0
-                
-                # Only pass node features for nodes that are actually referenced
-                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
+                # Get the appropriate node features for these edges
+                node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 
                 # Create edge weights on the same device as edge_index
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
@@ -226,14 +223,7 @@ class Runner:
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
                 
-                # Find unique nodes referenced by edges
-                if edge_idx.size(1) > 0:
-                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
-                    max_node_in_edges = int(unique_nodes.max()) + 1
-                else:
-                    max_node_in_edges = 0
-                
-                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
+                node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
                 g_embed = self.trained_model.graph_embedding(node_feats_subset, edge_idx, edge_weights)[0]
                 g_embeds.append(g_embed)
@@ -245,17 +235,11 @@ class Runner:
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
                 edge_idx = edge_idx - each_g_start_nid[i]
                 
-                # Find unique nodes referenced by edges
-                if edge_idx.size(1) > 0:
-                    unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
-                    max_node_in_edges = int(unique_nodes.max()) + 1
-                else:
-                    max_node_in_edges = 0
-                
-                node_feats_subset = self.ind_nodefeats[i][:max_node_in_edges]
+                node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
                 temp = self.trained_model.embedding(node_feats_subset, edge_idx, edge_weights)
-                n_embeds.append(temp[0:min(max_node_in_edges, len(new_graphs_node[i]))])
+                # Only keep embeddings for nodes that will be used
+                n_embeds.append(temp[0:min(temp.size(0), len(new_graphs_node[i]))])
             n_embeds = torch.cat(n_embeds)
 
             # isolated nodes
@@ -278,8 +262,7 @@ class Runner:
 
             # ind_subgraphs
             self.ind_subgraphs = new_graphs_node
-            self.each_g_start_nid = each_g_start_nid
-            self.each_g_start_eid = each_g_start_eid
+            # Note: self.each_g_start_nid and self.each_g_start_eid already assigned above
             self.original_preds = whole_graph_original_preds
             self.g_embeds = g_embeds
             self.max_n_nodes_in_g = np.max(np.array(each_g_actual_nodes))
@@ -575,14 +558,21 @@ class Runner:
     def get_node_features_for_edges(self, g_id, edge_idx):
         """
         Get the appropriate node features based on which nodes are referenced in the edge index.
-        This handles the case where edges only reference a subset of nodes.
+        For GCN to work properly, we need to pass ALL node features from 0 to the max node index,
+        even if some nodes are not connected (isolated nodes).
         """
         if edge_idx.size(1) > 0:
-            unique_nodes = torch.unique(edge_idx.flatten()).cpu().numpy()
-            max_node_in_edges = int(unique_nodes.max()) + 1
+            # Get the maximum node index referenced in edges
+            max_node_idx = int(edge_idx.max().item())
+            # Return node features from 0 to max_node_idx (inclusive)
+            num_nodes_needed = max_node_idx + 1
         else:
-            max_node_in_edges = 0
-        return self.ind_nodefeats[g_id][:max_node_in_edges]
+            # No edges, return a single node feature
+            num_nodes_needed = 1
+        
+        # Make sure we don't exceed the available node features
+        num_nodes_needed = min(num_nodes_needed, self.ind_nodefeats[g_id].size(0))
+        return self.ind_nodefeats[g_id][:num_nodes_needed]
 
     def prepare_graph(self, idx, selected_nodes):
         selected_nodes = list(selected_nodes)
