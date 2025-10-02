@@ -509,27 +509,27 @@ class Runner:
         if self.args.dataset == "mutag":
             node_type = ['C','O','Cl','H','N','F','Br','S','P','I','Na','K','Li','Ca']
 
-            for i in self.graph_eval_seeds:
-                if len(pred_sgs[i]) > 0:
-                    print("g_id", i, "n_id", pred_sgs[i][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[i][0]]] ,"len",len(pred_sgs[i]), f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [node_type[torch.argmax(self.nodefeats[x]).item()] for x in pred_sgs[i]], flush=True)
+            for idx, i in enumerate(self.graph_eval_seeds):
+                if idx < len(pred_sgs) and len(pred_sgs[idx]) > 0:
+                    print("g_id", i, "n_id", pred_sgs[idx][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[idx][0]]] ,"len",len(pred_sgs[idx]), f"p_loss={p_loss[idx]:.2f}", f"size_loss={s_loss[idx]:.2f}", f"sim_loss={sim_loss[idx]:.2f}",f"r_p={r_p[idx]:.2f}", "sgs", [node_type[torch.argmax(self.nodefeats[x]).item()] for x in pred_sgs[idx]], flush=True)
                 else:
-                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [], flush=True)
+                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[idx] if idx < len(p_loss) else 0:.2f}", f"size_loss={s_loss[idx] if idx < len(s_loss) else 0:.2f}", f"sim_loss={sim_loss[idx] if idx < len(sim_loss) else 0:.2f}",f"r_p={r_p[idx] if idx < len(r_p) else 0:.2f}", "sgs", [], flush=True)
             print(f"avg_p_loss={np.mean(p_loss):.2f}", f"avg_size_loss={np.mean(s_loss):.2f}", f"avg_sim_loss={np.mean(sim_loss):.2f}", f"r_p={np.mean(r_p):.2f}", flush=True)
 
-            for i in self.graph_eval_seeds:
-                if len(pred_sgs[i]) > 0:
-                    print("g_id", i, "n_id", pred_sgs[i][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[i][0]]] ,"len",len(pred_sgs[i]), f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [x - self.each_g_start_nid[self.n_to_g_index[x]] for x in pred_sgs[i]], flush=True)
+            for idx, i in enumerate(self.graph_eval_seeds):
+                if idx < len(pred_sgs) and len(pred_sgs[idx]) > 0:
+                    print("g_id", i, "n_id", pred_sgs[idx][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[idx][0]]] ,"len",len(pred_sgs[idx]), f"p_loss={p_loss[idx]:.2f}", f"size_loss={s_loss[idx]:.2f}", f"sim_loss={sim_loss[idx]:.2f}",f"r_p={r_p[idx]:.2f}", "sgs", [x - self.each_g_start_nid[self.n_to_g_index[x]] for x in pred_sgs[idx]], flush=True)
                 else:
-                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [], flush=True)
+                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[idx] if idx < len(p_loss) else 0:.2f}", f"size_loss={s_loss[idx] if idx < len(s_loss) else 0:.2f}", f"sim_loss={sim_loss[idx] if idx < len(sim_loss) else 0:.2f}",f"r_p={r_p[idx] if idx < len(r_p) else 0:.2f}", "sgs", [], flush=True)
             print(f"avg_p_loss={np.mean(p_loss):.2f}", f"avg_size_loss={np.mean(s_loss):.2f}", f"avg_sim_loss={np.mean(sim_loss):.2f}", f"r_p={np.mean(r_p):.2f}", flush=True)
 
         elif self.args.dataset == "ba2":
 
-            for i in self.graph_eval_seeds:
-                if len(pred_sgs[i]) > 0:
-                    print("g_id", i, "n_id", pred_sgs[i][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[i][0]]] ,"len",len(pred_sgs[i]), f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [x - self.each_g_start_nid[self.n_to_g_index[x]] for x in pred_sgs[i]], flush=True)
+            for idx, i in enumerate(self.graph_eval_seeds):
+                if idx < len(pred_sgs) and len(pred_sgs[idx]) > 0:
+                    print("g_id", i, "n_id", pred_sgs[idx][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[idx][0]]] ,"len",len(pred_sgs[idx]), f"p_loss={p_loss[idx]:.2f}", f"size_loss={s_loss[idx]:.2f}", f"sim_loss={sim_loss[idx]:.2f}",f"r_p={r_p[idx]:.2f}", "sgs", [x - self.each_g_start_nid[self.n_to_g_index[x]] for x in pred_sgs[idx]], flush=True)
                 else:
-                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[i]:.2f}", f"size_loss={s_loss[i]:.2f}", f"sim_loss={sim_loss[i]:.2f}",f"r_p={r_p[i]:.2f}", "sgs", [], flush=True)
+                    print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[idx] if idx < len(p_loss) else 0:.2f}", f"size_loss={s_loss[idx] if idx < len(s_loss) else 0:.2f}", f"sim_loss={sim_loss[idx] if idx < len(sim_loss) else 0:.2f}",f"r_p={r_p[idx] if idx < len(r_p) else 0:.2f}", "sgs", [], flush=True)
             print(f"avg_p_loss={np.mean(p_loss):.2f}", f"avg_size_loss={np.mean(s_loss):.2f}", f"avg_sim_loss={np.mean(sim_loss):.2f}", f"r_p={np.mean(r_p):.2f}", flush=True)
 
         else: # print current first ~50 sgs for syn1-syn4
