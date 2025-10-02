@@ -83,7 +83,7 @@ class GraphGCN(torch.nn.Module):
 
     def forward(self, x, edge_index, batch=None, edge_weights=None, global_agg_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.long)
+            batch = torch.zeros(x.size(0), dtype=torch.int64)
         embed = self.embedding(x, edge_index, edge_weights)
 
         if global_agg_weights is not None:
@@ -119,7 +119,7 @@ class GraphGCN(torch.nn.Module):
 
     def graph_embedding(self, x, edge_index, batch=None, edge_weights=None, global_agg_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.long)
+            batch = torch.zeros(x.size(0), dtype=torch.int64)
         embed = self.embedding(x, edge_index, edge_weights)
 
         if global_agg_weights is not None:
@@ -161,7 +161,7 @@ class GraphGCN(torch.nn.Module):
             graph_representations: [batch_size, hidden_dim]
         """
         if batch is None:
-            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         
         # Get node representations
         node_reps = self.embedding(x, edge_index)

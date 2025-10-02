@@ -27,7 +27,7 @@ def create_test_graph(num_nodes=10, num_edges=15):
     x = torch.randn(num_nodes, 5)
     
     # Create batch (single graph)
-    batch = torch.zeros(num_nodes, dtype=torch.long)
+    batch = torch.zeros(num_nodes, dtype=torch.int64)
     
     # Create target label
     y = torch.randint(0, 3, (1,))

@@ -60,13 +60,13 @@ class GraphGCN(torch.nn.Module):
 
     def forward(self, x, edge_index, batch=None, edge_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         
         embed = self.embedding(x, edge_index, edge_weights)
         
         # Ensure batch tensor matches the number of nodes in embed
         if batch.size(0) != embed.size(0):
-            batch = torch.zeros(embed.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=x.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
@@ -100,12 +100,12 @@ class GraphGCN(torch.nn.Module):
 
     def graph_embedding(self, x, edge_index, batch=None, edge_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         embed = self.embedding(x, edge_index, edge_weights)
         
         # Ensure batch tensor matches the number of nodes in embed
         if batch.size(0) != embed.size(0):
-            batch = torch.zeros(embed.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=x.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
@@ -143,7 +143,7 @@ class GraphGCN(torch.nn.Module):
             graph_representations: [batch_size, hidden_dim]
         """
         if batch is None:
-            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         
         # Get node representations
         node_reps = self.embedding(x, edge_index)

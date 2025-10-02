@@ -662,7 +662,7 @@ class Runner:
                 graph_obj = SimpleGraph(
                     edge_index=batch_g[i],
                     x=self.nodefeats if self.task == "node_task" else self.ind_nodefeats[self.get_g_id(x, True)],
-                    batch=torch.zeros(batch_g[i].size(1), dtype=torch.long, device=self.device) if self.task == "node_task" else None,
+                    batch=torch.zeros(batch_g[i].size(1), dtype=torch.int64, device=self.device) if self.task == "node_task" else None,
                     y=torch.tensor([target_y], device=self.device)
                 )
                 

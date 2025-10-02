@@ -251,9 +251,9 @@ class GraphLevelCausalExplainer(nn.Module):
         
         # ========== STEP 5: Identify which graph each edge belongs to ==========
         
-        batch = graph.batch if hasattr(graph, 'batch') else torch.zeros(graph.x.size(0), dtype=torch.long, device=graph.x.device)
+        batch = graph.batch if hasattr(graph, 'batch') else torch.zeros(graph.x.size(0), dtype=torch.int64, device=graph.x.device)
         ava_action_batch = batch[ava_edge_index[0]]  # Batch assignment for each edge
-        ava_y_batch = graph.y[ava_action_batch] if hasattr(graph, 'y') else torch.zeros(len(ava_action_batch), dtype=torch.long, device=graph.x.device)
+        ava_y_batch = graph.y[ava_action_batch] if hasattr(graph, 'y') else torch.zeros(len(ava_action_batch), dtype=torch.int64, device=graph.x.device)
         
         # Handle case where some graphs have no available edges
         unique_batch, ava_action_batch = torch.unique(ava_action_batch, return_inverse=True)
