@@ -545,8 +545,12 @@ class Runner:
             explanations = [self.prepare_mask(self.subgraphs[i], x) for i, x in enumerate(pred_sgs)]
         else:
             explanations = []
-            for g_id in self.graph_eval_seeds:
-                explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], [x - self.each_g_start_nid[g_id] for x in pred_sgs[g_id]]))
+            for idx, g_id in enumerate(self.graph_eval_seeds):
+                if idx < len(pred_sgs):
+                    explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], [x - self.each_g_start_nid[g_id] for x in pred_sgs[idx]]))
+                else:
+                    # Handle case where pred_sgs doesn't have enough elements
+                    explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], []))
 
 
         auc_score = self.auc_eval.get_score(explanations)
