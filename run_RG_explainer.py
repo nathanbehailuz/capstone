@@ -660,10 +660,18 @@ class Runner:
             for i, x in enumerate(cs):
                 # Get target class for this subgraph
                 if self.task == "node_task":
-                    target_y = self.original_preds[x[0]].item()
+                    if x[0] < len(self.original_preds):
+                        target_y = self.original_preds[x[0]].item()
+                    else:
+                        print(f"[CAUSAL] Warning: node_id {x[0]} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
+                        target_y = 0
                 else:
                     g_id = self.get_g_id(x, True)
-                    target_y = self.original_preds[g_id].item()
+                    if g_id < len(self.original_preds):
+                        target_y = self.original_preds[g_id].item()
+                    else:
+                        print(f"[CAUSAL] Warning: g_id {g_id} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
+                        target_y = 0
                 
                 # Create a simple graph object for causal analysis
                 # This is a simplified version - in practice, you'd need proper PyG Data objects
