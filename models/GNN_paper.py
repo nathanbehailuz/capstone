@@ -24,29 +24,6 @@ class NodeGCN(torch.nn.Module):
         final = self.lin(input_lin)
         return final
 
-    def embedding(self, x, edge_index, edge_weights=None):
-        if edge_weights is None:
-            edge_weights = torch.ones(edge_index.size(1), device=edge_index.device)
-        stack = []
-
-        out1 = self.conv1(x, edge_index, edge_weights)
-        out1 = torch.nn.functional.normalize(out1, p=2, dim=1)  # this is not used in PGExplainer
-        out1 = self.relu1(out1)
-        stack.append(out1)
-
-        out2 = self.conv2(out1, edge_index, edge_weights)
-        out2 = torch.nn.functional.normalize(out2, p=2, dim=1)  # this is not used in PGExplainer
-        out2 = self.relu2(out2)
-        stack.append(out2)
-
-        out3 = self.conv3(out2, edge_index, edge_weights)
-        out3 = torch.nn.functional.normalize(out3, p=2, dim=1)  # this is not used in PGExplainer
-        out3 = self.relu3(out3)
-        stack.append(out3)
-
-        input_lin = torch.cat(stack, dim=1)
-
-        return input_lin
 
     def get_node_reps(self, x, edge_index, edge_attr, batch):
         """
@@ -84,7 +61,12 @@ class GraphGCN(torch.nn.Module):
     def forward(self, x, edge_index, batch=None, edge_weights=None):
         if batch is None: # No batch given
             batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+        
         embed = self.embedding(x, edge_index, edge_weights)
+        
+        # Ensure batch tensor matches the number of nodes in embed
+        if batch.size(0) != embed.size(0):
+            batch = torch.zeros(embed.size(0), dtype=torch.long, device=x.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
@@ -120,6 +102,10 @@ class GraphGCN(torch.nn.Module):
         if batch is None: # No batch given
             batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
         embed = self.embedding(x, edge_index, edge_weights)
+        
+        # Ensure batch tensor matches the number of nodes in embed
+        if batch.size(0) != embed.size(0):
+            batch = torch.zeros(embed.size(0), dtype=torch.long, device=x.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
