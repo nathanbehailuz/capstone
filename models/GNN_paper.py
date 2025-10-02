@@ -64,9 +64,11 @@ class GraphGCN(torch.nn.Module):
         
         embed = self.embedding(x, edge_index, edge_weights)
         
-        # Ensure batch tensor matches the number of nodes in embed
-        if batch.size(0) != embed.size(0):
-            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=x.device)
+        # Ensure batch tensor matches the number of nodes in embed and is on the same device with correct dtype
+        if (batch.size(0) != embed.size(0) or 
+            batch.device != embed.device or 
+            batch.dtype != torch.int64):
+            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=embed.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
@@ -103,9 +105,11 @@ class GraphGCN(torch.nn.Module):
             batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         embed = self.embedding(x, edge_index, edge_weights)
         
-        # Ensure batch tensor matches the number of nodes in embed
-        if batch.size(0) != embed.size(0):
-            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=x.device)
+        # Ensure batch tensor matches the number of nodes in embed and is on the same device with correct dtype
+        if (batch.size(0) != embed.size(0) or 
+            batch.device != embed.device or 
+            batch.dtype != torch.int64):
+            batch = torch.zeros(embed.size(0), dtype=torch.int64, device=embed.device)
 
         out1 = global_max_pool(embed, batch)
         out2 = global_mean_pool(embed, batch)
