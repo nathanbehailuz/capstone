@@ -48,7 +48,10 @@ class LogParser:
         )
         self.re_eval_sum = regex.compile(
             r'avg_p_loss=(?P<avg_p>[-\d\.eE+]+)\s+avg_size_loss=(?P<avg_size>[-\d\.eE+]+)\s+'
-            r'avg_sim_loss=(?P<avg_sim>[-\d\.eE+]+)\s+r_p=(?P<avg_rp>[-\d\.eE+]+)\s*\nAUC=(?P<auc>[-\d\.eE+]+)'
+            r'avg_sim_loss=(?P<avg_sim>[-\d\.eE+]+)\s+r_p=(?P<avg_rp>[-\d\.eE+]+)'
+        )
+        self.re_eval_auc = regex.compile(
+            r'\[EVAL-(?:Pretrained|Epoch\s+\d+)\]\s*AUC=(?P<auc>[-\d\.eE+]+)'
         )
         
         # Additional patterns for metadata
@@ -226,10 +229,16 @@ class LogParser:
                 train_data = {k: float(v) for k, v in train_match.groupdict().items()}
                 continue
             
-            # Check for evaluation summary
-            eval_match = self.re_eval_sum.search(line + '\n' + (lines[i+1] if i+1 < len(lines) else ''))
+            # Check for evaluation summary (avg_p_loss line)
+            eval_match = self.re_eval_sum.search(line)
             if eval_match:
                 eval_data = {k: float(v) for k, v in eval_match.groupdict().items()}
+                continue
+            
+            # Check for AUC line
+            auc_match = self.re_eval_auc.search(line)
+            if auc_match:
+                eval_data['auc'] = float(auc_match.group('auc'))
                 continue
         
         # Don't forget the last epoch
