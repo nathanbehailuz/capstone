@@ -1,17 +1,8 @@
-# capstone
+# Navigate to the analysis directory first
+cd /Users/nathanbehailu/Desktop/Capstone/capstone/analysis
 
-This is a Pytorch implementation of our RG-Explainer. 
+# Activate your virtual environment
+source ../venv/bin/activate
 
-You can use docker mapa17/torch_geometric to run all the scripts directly. 
-
-If you use conda, please install:
-python 3.7
-pytorch 1.8.0
-torch-geometric
-networkx
-numpy 
-scikit-learn 
-scipy 
-pandas
-
-
+# Run the analysis
+python -m src.analyze analyze ../results/mutag_fixed_test_seed_0.txt --outdir results --save-csv

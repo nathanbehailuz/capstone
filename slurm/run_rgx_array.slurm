@@ -1,18 +1,18 @@
 #!/bin/bash
-# File: run_rgx_array.slurm
+# File: test_causal_unified.slurm
+# Purpose: Test updated causal algorithm on all datasets with seed=0
 
 ## ===================== SLURM =====================
-#SBATCH -J rgx_array
+#SBATCH -J test_causal_unified
 #SBATCH -p nvidia
 #SBATCH --gres=gpu:1
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -c 4
+#SBATCH -c 8                     # More CPU for sequential runs
 #SBATCH --mem=24G
-#SBATCH -t 08:00:00
-#SBATCH --array=0-4
-#SBATCH -o slurm_out/%x_%A_%a.out
-#SBATCH -e slurm_out/%x_%A_%a.err
+#SBATCH -t 12:00:00              # Extended time for all datasets
+#SBATCH -o slurm_out/%x_%j.out
+#SBATCH -e slurm_out/%x_%j.err
 ## =================================================
 
 # Always run from the submit dir
@@ -25,76 +25,83 @@ mkdir -p slurm_out results
 module purge
 module load miniconda/3-4.11.0
 
-# Initialize Conda for non-interactive shells (try both styles)
+# Initialize Conda for non-interactive shells
 if ! source "/share/apps/NYUAD5/miniconda/3-4.11.0/etc/profile.d/conda.sh" 2>/dev/null; then
   eval "$(/share/apps/NYUAD5/miniconda/3-4.11.0/bin/conda shell.bash hook)"
 fi
 
-# Activate your env by absolute path
+# Activate env
 conda activate /home/nz2212/.conda/envs/rlgn
 
-# Install required packages if not present
-echo "Installing required packages..."
-pip install scipy pandas numpy torch torch-geometric scikit-learn
-
-# Verify package installation
-echo "Verifying package installation..."
-"${PYBIN}" -c "import scipy, pandas, numpy, torch; print('All packages imported successfully')" || {
-    echo "ERROR: Package installation failed!"
-    exit 1
-}
-
-# Optional: prefer env libs first (harmless even if libstdc++ isn't present)
+# Prefer env libs
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
-# Sanity: use the env's Python explicitly
+# Explicit python
 PYBIN="${CONDA_PREFIX}/bin/python"
 
-# Helpful runtime flags while debugging
-export CUDA_LAUNCH_BLOCKING=1
-export TORCH_SHOW_CPP_STACKTRACES=1
-export PYTHONNOUSERSITE=1
+# Threading optimization (reduced to avoid OpenBLAS issues)
+export OMP_NUM_THREADS=4
+export MKL_NUM_THREADS=4
+export OPENBLAS_NUM_THREADS=4
+export NUMEXPR_NUM_THREADS=4
+export PYTHONUNBUFFERED=1
 
-## ==================== Params =====================
-SEED="${SLURM_ARRAY_TASK_ID}"
+# CUDA optimization
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# Unified result file
+UNIFIED_RESULT_FILE="mutag_ppo_seed_test_0.txt"
+
+# Clear/create unified result file
+echo "========================================" > "$UNIFIED_RESULT_FILE"
+echo "CAUSAL ALGORITHM TEST - MUTAG DATASET" >> "$UNIFIED_RESULT_FILE"
+echo "Date: $(date)" >> "$UNIFIED_RESULT_FILE"
+echo "Seed: 0" >> "$UNIFIED_RESULT_FILE"
+echo "Job ID: $SLURM_JOB_ID" >> "$UNIFIED_RESULT_FILE"
+echo "Node: $(hostname)" >> "$UNIFIED_RESULT_FILE"
+echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-<unset>}" >> "$UNIFIED_RESULT_FILE"
+echo "========================================" >> "$UNIFIED_RESULT_FILE"
+echo "" >> "$UNIFIED_RESULT_FILE"
+
+# Test GPU availability
+echo "[$(date)] Testing GPU availability..." | tee -a "$UNIFIED_RESULT_FILE"
+nvidia-smi -L | tee -a "$UNIFIED_RESULT_FILE"
+echo "" >> "$UNIFIED_RESULT_FILE"
+
+## ==================== MUTAG DATASET CONFIGURATION =====================
+# Fixed parameters for mutag dataset
 DATASET="mutag"
-RESULT_FILE="results/${DATASET}_seed_${SEED}.txt"
+SEED=0
+POLICY="PPO"
+N_EPOCHS=10
+SIZE_REG=0.01
+SIM_REG=0.01
+RADIUS_PENALTY=0.01
 
-echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
+## ================== RUN MUTAG DATASET =====================
+echo "========================================" | tee -a "$UNIFIED_RESULT_FILE"
+echo "[$(date)] Starting dataset: $DATASET" | tee -a "$UNIFIED_RESULT_FILE"
+echo "Parameters: epochs=$N_EPOCHS, size_reg=$SIZE_REG, sim_reg=$SIM_REG, radius_penalty=$RADIUS_PENALTY" | tee -a "$UNIFIED_RESULT_FILE"
+echo "========================================" | tee -a "$UNIFIED_RESULT_FILE"
 
-## ============== GPU & Torch Probes ===============
-echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}" | tee -a "$RESULT_FILE"
+# Run the algorithm
+"${PYBIN}" run_RG_explainer.py \
+    --dataset "$DATASET" \
+    --seed "$SEED" \
+    --policy "$POLICY" \
+    --n_epochs "$N_EPOCHS" \
+    --size_reg "$SIZE_REG" \
+    --sim_reg "$SIM_REG" \
+    --use_causal \
+    --causal_weight 0.2 \
+    --radius_penalty "$RADIUS_PENALTY" \
+    >> "$UNIFIED_RESULT_FILE" 2>&1
 
-# Confirm GPU is allocated to THIS step
-srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
+echo "[$(date)] Completed dataset: $DATASET" | tee -a "$UNIFIED_RESULT_FILE"
+echo "" >> "$UNIFIED_RESULT_FILE"
 
-## ================== TRAINING =====================
-# Launch your script INSIDE the GPU step, using the env's python
-srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
-  "${PYBIN}" run_RG_explainer.py \
-    --dataset "${DATASET}" \
-    --seed "${SEED}" \
-    --n_epochs 10 \
-    --ppo_clip 0.1 \
-    --kl_target 0.0075 \
-    --lr 1e-4 \
-    --gamma 0.99 \
-    --gae_lambda 0.95 \
-    --max_grad_norm 0.5 \
-    --use_value_clip \
-    --entropy_coeff_start 1e-3 \
-    --entropy_coeff_end 1e-4 \
-    --target_size_k 6 \
-    --lambda_size 0.5 \
-    --lambda_radius 1.0 \
-    --lambda_radius_min 0.2 \
-    --step_cost 0.001 \
-    --stop_bias 0.5 \
-    --fidelity_thresh 0.9 \
-    --causal_w 0.5 \
-    --causal_warmup_epochs 5 \
-    --edge_score_agg max \
-    --debug_eval_graph -1 \
-  >> "$RESULT_FILE" 2>&1
-
-echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"
+echo "========================================" | tee -a "$UNIFIED_RESULT_FILE"
+echo "[$(date)] MUTAG DATASET COMPLETED" | tee -a "$UNIFIED_RESULT_FILE"
+echo "Results saved to: $UNIFIED_RESULT_FILE" | tee -a "$UNIFIED_RESULT_FILE"
+echo "========================================" | tee -a "$UNIFIED_RESULT_FILE"

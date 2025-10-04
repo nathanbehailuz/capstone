@@ -1020,9 +1020,7 @@ if __name__ == '__main__':
     parser.add_argument('--ppo_epochs', type=int, default=4)
     parser.add_argument('--minibatch_size', type=int, default=256)
     parser.add_argument('--clip_eps', type=float, default=0.2)
-    parser.add_argument('--target_kl', type=float, default=0.03)
     parser.add_argument('--grad_clip', type=float, default=1.0)
-    parser.add_argument('--gae_lambda', type=float, default=0.95)
     parser.add_argument('--frontier_shaping_beta', type=float, default=0.0)
     
     # Entropy decay parameters

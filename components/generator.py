@@ -185,7 +185,10 @@ class Generator:
 
     def load_nodefeats(self, x):
         #self.nodefeats = torch.from_numpy(x).float().to(self.device) 
-        self.nodefeats = x.numpy()
+        if isinstance(x, torch.Tensor):
+            self.nodefeats = x.cpu().numpy()
+        else:
+            self.nodefeats = x
         #self.nodefeats = x.astype(np.float32)
 
     def init_causal_reward_calculator(self, gnn_model):
