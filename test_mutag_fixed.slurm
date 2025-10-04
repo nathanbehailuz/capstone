@@ -51,7 +51,7 @@ export CUDA_DEVICE_ORDER=PCI_BUS_ID
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 # Result file
-RESULT_FILE="results/mutag_fixed_test_seed_0.txt"
+RESULT_FILE="results/mutag_test_seed_0.txt"
 
 # Clear/create result file
 echo "========================================" > "$RESULT_FILE"

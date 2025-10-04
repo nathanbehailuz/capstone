@@ -4,6 +4,8 @@ import hashlib
 import json
 import pathlib
 import time
+import sys
+import os
 
 import torch
 from torch import optim
@@ -500,6 +502,7 @@ class Runner:
 
 
     def evaluate_and_print(self, prefix=''):
+        print(f"[DEBUG] Starting evaluation for {prefix}", flush=True)
 
         pred_sgs = self.g.generate(self.eval_seeds)
         p_loss, s_loss, sim_loss, r_p = self.eval_loss(pred_sgs)
@@ -555,6 +558,22 @@ class Runner:
 
         auc_score = self.auc_eval.get_score(explanations)
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
+        print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
+
+        # Write results to a backup file to ensure they're captured
+        try:
+            results_dir = "results"
+            if not os.path.exists(results_dir):
+                os.makedirs(results_dir)
+            
+            backup_file = f"{results_dir}/backup_results_{self.args.dataset}.txt"
+            with open(backup_file, "a") as f:
+                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                f.write(f"{timestamp} - {prefix} - Dataset: {self.args.dataset} - AUC: {auc_score:.4f}\n")
+                f.flush()
+            print(f"[DEBUG] Results written to backup file: {backup_file}", flush=True)
+        except Exception as e:
+            print(f"[DEBUG] Failed to write backup results: {e}", flush=True)
 
         return auc_score
 
@@ -901,8 +920,28 @@ class Runner:
 
 
 def main(args):
+    # Force output flushing for SLURM environments
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    # Debug: Print current working directory and file permissions
+    print(f"[DEBUG] Current working directory: {os.getcwd()}", flush=True)
+    print(f"[DEBUG] Python executable: {sys.executable}", flush=True)
+    print(f"[DEBUG] SLURM_JOB_ID: {os.environ.get('SLURM_JOB_ID', 'Not set')}", flush=True)
+    
+    # Ensure results directory exists
+    results_dir = "results"
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+        print(f"[DEBUG] Created results directory: {results_dir}", flush=True)
+    
     runner = Runner(args)
     runner.run()
+    
+    # Final flush before exit
+    sys.stdout.flush()
+    sys.stderr.flush()
+    print(f"[DEBUG] Job completed successfully", flush=True)
 
 
 if __name__ == '__main__':
