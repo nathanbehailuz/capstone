@@ -105,6 +105,26 @@ class Generator:
                  entropy_decay_start: float = 1e-3,
                  entropy_decay_end: float = 1e-4,
                  entropy_decay_final: float = 0.0,
+                 # New parameters for STOP action and penalties
+                 target_size_k: int = 8,
+                 lambda_size: float = 0.5,
+                 lambda_radius: float = 1.0,
+                 lambda_radius_min: float = 0.2,
+                 step_cost: float = 0.001,
+                 stop_bias: float = 0.5,
+                 fidelity_thresh: float = 0.9,
+                 # PPO stability parameters
+                 ppo_clip: float = 0.1,
+                 kl_target: float = 0.0075,
+                 lr: float = 1e-4,
+                 gamma: float = 0.99,
+                 max_grad_norm: float = 0.5,
+                 use_value_clip: bool = True,
+                 # Entropy scheduling
+                 entropy_coeff_start: float = 1e-3,
+                 entropy_coeff_end: float = 1e-4,
+                 # Causal reward scheduling
+                 causal_warmup_epochs: int = 5,
                  # Causal mechanism parameters
                  use_causal: bool = False,
                  causal_explainer: Optional[Union['NodeLevelCausalExplainer', 'GraphLevelCausalExplainer']] = None,
@@ -135,6 +155,36 @@ class Generator:
         self.entropy_decay_end = entropy_decay_end
         self.entropy_decay_final = entropy_decay_final
         self.current_entropy_coef = entropy_decay_start
+
+        # New parameters for STOP action and penalties
+        self.target_size_k = target_size_k
+        self.lambda_size = lambda_size
+        self.lambda_radius = lambda_radius
+        self.lambda_radius_min = lambda_radius_min
+        self.step_cost = step_cost
+        self.stop_bias = stop_bias
+        self.fidelity_thresh = fidelity_thresh
+        
+        # PPO stability parameters
+        self.clip_range = ppo_clip
+        self.vf_clip = ppo_clip if use_value_clip else None
+        self.gamma = gamma
+        self.use_gae = True
+        self.reward_norm = False
+        self.kl_target = kl_target
+        self.max_grad_norm = max_grad_norm
+        
+        # Entropy scheduling
+        self.entropy_coeff_start = entropy_coeff_start
+        self.entropy_coeff_end = entropy_coeff_end
+        
+        # Causal reward scheduling
+        self.causal_warmup_epochs = causal_warmup_epochs
+        self.current_epoch = 0
+        
+        # Monitoring
+        self.last_approx_kl = 0.0
+        self.last_clip_frac = 0.0
 
         # Causal mechanism integration
         self.use_causal = use_causal
@@ -175,9 +225,91 @@ class Generator:
                 self.current_entropy_coef = self.entropy_decay_end + progress * (self.entropy_decay_final - self.entropy_decay_end)
             else:
                 self.current_entropy_coef = self.entropy_decay_final
+
+    def update_epoch(self, epoch: int):
+        """
+        Update current epoch for scheduling.
         
-        # Update the entropy coefficient used in training
-        self.entropy_coef = self.current_entropy_coef
+        Args:
+            epoch: Current epoch (0-indexed)
+        """
+        self.current_epoch = epoch
+
+    def get_effective_causal_weight(self, epoch: int) -> float:
+        """
+        Get effective causal weight with warmup scheduling.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            
+        Returns:
+            Effective causal weight considering warmup
+        """
+        if epoch < self.causal_warmup_epochs:
+            return self.causal_weight * (epoch / self.causal_warmup_epochs)
+        else:
+            return self.causal_weight
+
+    def get_early_stop_rate(self, selected_nodes: List[List[int]]) -> float:
+        """
+        Calculate the rate of early stopping (STOP action chosen before max steps).
+        
+        Args:
+            selected_nodes: List of trajectories
+            
+        Returns:
+            Early stop rate (0.0 to 1.0)
+        """
+        early_stops = 0
+        total_trajectories = len(selected_nodes)
+        
+        if total_trajectories == 0:
+            return 0.0
+            
+        for traj in selected_nodes:
+            # Check if trajectory ended early (before max_size)
+            if len(traj) < self.max_size and traj[-1] != 'EOS':
+                early_stops += 1
+            elif traj[-1] == 'EOS' and len(traj) < self.max_size + 1:
+                early_stops += 1
+                
+        return early_stops / total_trajectories
+
+    def get_effective_lambda_radius(self, epoch: int, total_epochs: int) -> float:
+        """
+        Get effective lambda_radius with linear decay schedule.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            total_epochs: Total number of epochs
+            
+        Returns:
+            Effective lambda_radius considering decay
+        """
+        if total_epochs > 1:
+            progress = epoch / (total_epochs - 1)
+            return self.lambda_radius + progress * (self.lambda_radius_min - self.lambda_radius)
+        else:
+            return self.lambda_radius
+
+    def init_causal_reward_calculator(self, gnn_model):
+        """
+        Initialize the causal reward calculator with the GNN model.
+        This should be called after the GNN model is available.
+        
+        Args:
+            gnn_model: The trained GNN model for causal analysis
+        """
+        if self.use_causal and self.causal_explainer is not None:
+            from .causal_explainer import CausalRewardCalculator
+            self.causal_reward_calculator = CausalRewardCalculator(
+                gnn_model=gnn_model,
+                causal_explainer=self.causal_explainer,
+                causal_weight=self.causal_weight
+            )
+            print(f"[CAUSAL] Initialized causal reward calculator with weight {self.causal_weight}")
+        else:
+            print("[CAUSAL] Causal mechanism not enabled")
     
     def _strip_eos(self, traj):
         """Strip EOS tokens from trajectory"""

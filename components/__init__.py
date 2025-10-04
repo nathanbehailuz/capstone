@@ -1,7 +1,6 @@
 from .graph import Graph
 from .generator_core import Agent, GraphConv
-from .generator import Generator
-from .generator_copy import ExpansionEnv
+from .generator_copy import Generator, ExpansionEnv
 
 from .locator_seed import Locator
 __all__ = [

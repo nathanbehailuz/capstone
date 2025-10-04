@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-9
+#SBATCH --array=0-1
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -69,6 +69,9 @@ SIM_REG=0.01
 RADIUS_PENALTY=0.01
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
+
+# Clean the result file before starting
+> "$RESULT_FILE"
 
 echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
 

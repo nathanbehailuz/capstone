@@ -571,20 +571,6 @@ class Runner:
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
         print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
 
-        # Write results to a backup file to ensure they're captured
-        try:
-            results_dir = "results"
-            if not os.path.exists(results_dir):
-                os.makedirs(results_dir)
-            
-            backup_file = f"{results_dir}/backup_results_{self.args.dataset}.txt"
-            with open(backup_file, "a") as f:
-                timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                f.write(f"{timestamp} - {prefix} - Dataset: {self.args.dataset} - AUC: {auc_score:.4f}\n")
-                f.flush()
-            print(f"[DEBUG] Results written to backup file: {backup_file}", flush=True)
-        except Exception as e:
-            print(f"[DEBUG] Failed to write backup results: {e}", flush=True)
 
         return auc_score
 
