@@ -33,6 +33,17 @@ fi
 # Activate your env by absolute path
 conda activate /home/nz2212/.conda/envs/rlgn
 
+# Install required packages if not present
+echo "Installing required packages..."
+pip install scipy pandas numpy torch torch-geometric scikit-learn
+
+# Verify package installation
+echo "Verifying package installation..."
+"${PYBIN}" -c "import scipy, pandas, numpy, torch; print('All packages imported successfully')" || {
+    echo "ERROR: Package installation failed!"
+    exit 1
+}
+
 # Optional: prefer env libs first (harmless even if libstdc++ isn't present)
 export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 
