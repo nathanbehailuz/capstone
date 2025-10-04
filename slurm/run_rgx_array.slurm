@@ -11,14 +11,16 @@
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 
-PYTHON=/anaconda/envs/py37_pytorch/bin/python3
+module purge
+module load miniconda/3-4.11.0
+conda activate /home/nz2212/.conda/envs/rlgn
 SEED=${SLURM_ARRAY_TASK_ID}
 
 # Create results directory
 mkdir -p results
 
 # Run with seed-specific output files
-$PYTHON run_RG_explainer.py \
+python run_RG_explainer.py \
   --dataset mutag \
   --seed $SEED \
   --n_epochs 10 \
