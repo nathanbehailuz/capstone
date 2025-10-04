@@ -322,7 +322,7 @@ class Runner:
         else:
             g_model = Agent(args.hidden_size, args.with_attr).to(device)
 
-        g_optimizer = optim.Adam(g_model.parameters(), lr=args.g_lr)
+        g_optimizer = optim.Adam(g_model.parameters(), lr=args.lr)
         
         # Initialize causal mechanism parameters
         use_causal = getattr(args, 'use_causal', False)
@@ -363,20 +363,30 @@ class Runner:
                       n_rollouts=args.n_rollouts,
                       max_size=args.max_size,
                       max_reward=5.,
-                      ppo_epochs=args.ppo_epochs,
-                      minibatch_size=args.minibatch_size,
-                      clip_eps=args.clip_eps,
-                      target_kl=args.target_kl,
-                      grad_clip=args.grad_clip,
+                      # New parameters for STOP action and penalties
+                      target_size_k=args.target_size_k,
+                      lambda_size=args.lambda_size,
+                      lambda_radius=args.lambda_radius,
+                      lambda_radius_min=args.lambda_radius_min,
+                      step_cost=args.step_cost,
+                      stop_bias=args.stop_bias,
+                      fidelity_thresh=args.fidelity_thresh,
+                      # PPO stability parameters
+                      ppo_clip=args.ppo_clip,
+                      kl_target=args.kl_target,
+                      lr=args.lr,
+                      gamma=args.gamma,
                       gae_lambda=args.gae_lambda,
-                      frontier_shaping_beta=args.frontier_shaping_beta,
-                      entropy_decay_start=args.entropy_decay_start,
-                      entropy_decay_end=args.entropy_decay_end,
-                      entropy_decay_final=args.entropy_decay_final,
+                      max_grad_norm=args.max_grad_norm,
+                      use_value_clip=args.use_value_clip,
+                      # Entropy scheduling
+                      entropy_coeff_start=args.entropy_coeff_start,
+                      entropy_coeff_end=args.entropy_coeff_end,
                       # Causal mechanism parameters
                       use_causal=use_causal,
                       causal_explainer=causal_explainer,
-                      causal_weight=causal_weight)
+                      causal_weight=causal_weight,
+                      causal_warmup_epochs=args.causal_warmup_epochs)
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
         
@@ -555,7 +565,9 @@ class Runner:
                     explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], []))
 
 
-        auc_score = self.auc_eval.get_score(explanations)
+        auc_score = self.auc_eval.get_score(explanations, 
+                                          edge_score_agg=self.args.edge_score_agg,
+                                          debug_eval_graph=self.args.debug_eval_graph)
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
         print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
 
@@ -833,14 +845,23 @@ class Runner:
 
     def train_g_step(self, g_it):
         shuffle_index = random.choices(list(range(len(self.eval_seeds))), k=self.args.g_batch_size)
-        _, r, policy_loss, length = self.g.train_from_rewards(np.array(self.eval_seeds)[shuffle_index], self.score_fn, policy=self.args.policy)
+        selected_nodes, r, policy_loss, length = self.g.train_from_rewards(np.array(self.eval_seeds)[shuffle_index], self.score_fn, policy=self.args.policy)
+        
+        # Calculate new metrics
+        early_stop_rate = self.g.get_early_stop_rate(selected_nodes)
+        avg_size = np.mean([len([x for x in traj if x != 'EOS']) for traj in selected_nodes])
         
         self.writer.add_scalar('G/Reward', r, g_it)
         self.writer.add_scalar('G/PolicyLoss', policy_loss, g_it)
         self.writer.add_scalar('G/Length', length, g_it)
+        self.writer.add_scalar('G/EarlyStopRate', early_stop_rate, g_it)
+        self.writer.add_scalar('G/AvgSize', avg_size, g_it)
+        
         print(f'Reward={r:.2f}',
               f'PLoss={policy_loss: 2.2f}',
-              f'Length={length:2.1f}', flush=True)
+              f'Length={length:2.1f}',
+              f'EarlyStopRate={early_stop_rate:.3f}',
+              f'AvgSize={avg_size:.1f}', flush=True)
 
 
     def train_l(self, l_epochs, sample_rate):
@@ -892,7 +913,12 @@ class Runner:
             
             # Update entropy coefficient for decay
             self.g.update_entropy_coef(i_epoch, self.args.n_epochs)
+            self.g.update_epoch(i_epoch)
             print(f'Entropy coefficient: {self.g.current_entropy_coef:.6f}', flush=True)
+            
+            # Log effective causal weight
+            effective_causal_w = self.g.get_effective_causal_weight(i_epoch)
+            print(f'Effective causal weight: {effective_causal_w:.4f}', flush=True)
 
             if self.task == "graph_task":
                 if i_epoch==0 or i_epoch%5==0:
@@ -1009,8 +1035,64 @@ if __name__ == '__main__':
                        help='Enable causal mechanism for subgraph generation')
     parser.add_argument('--causal_weight', type=float, default=0.5,
                        help='Weight for causal term in reward function (0.0 to 1.0)')
+    parser.add_argument('--causal_warmup_epochs', type=int, default=5,
+                       help='Number of epochs to warmup causal weight from 0 to target')
+
+    # New parameters for STOP action and penalties
+    parser.add_argument('--target_size_k', type=int, default=8,
+                       help='Target size for explanations (default depends on dataset)')
+    parser.add_argument('--lambda_size', type=float, default=0.5,
+                       help='Weight for size penalty (hinge loss on target size)')
+    parser.add_argument('--lambda_radius', type=float, default=1.0,
+                       help='Initial weight for radius penalty')
+    parser.add_argument('--lambda_radius_min', type=float, default=0.2,
+                       help='Final weight for radius penalty after decay')
+    parser.add_argument('--step_cost', type=float, default=0.001,
+                       help='Cost per step to discourage long trajectories')
+    parser.add_argument('--stop_bias', type=float, default=0.5,
+                       help='Bias applied to STOP action logit')
+    parser.add_argument('--fidelity_thresh', type=float, default=0.9,
+                       help='Fidelity threshold for STOP bonus')
+
+    # PPO stability parameters
+    parser.add_argument('--ppo_clip', type=float, default=0.1,
+                       help='PPO clip range')
+    parser.add_argument('--kl_target', type=float, default=0.0075,
+                       help='Target KL divergence for adaptive penalty')
+    parser.add_argument('--lr', type=float, default=1e-4,
+                       help='Learning rate')
+    parser.add_argument('--gamma', type=float, default=0.99,
+                       help='Discount factor')
+    parser.add_argument('--gae_lambda', type=float, default=0.95,
+                       help='GAE lambda parameter')
+    parser.add_argument('--max_grad_norm', type=float, default=0.5,
+                       help='Maximum gradient norm for clipping')
+    parser.add_argument('--use_value_clip', action='store_true', default=True,
+                       help='Enable value function clipping')
+
+    # Entropy scheduling
+    parser.add_argument('--entropy_coeff_start', type=float, default=1e-3,
+                       help='Starting entropy coefficient')
+    parser.add_argument('--entropy_coeff_end', type=float, default=1e-4,
+                       help='Ending entropy coefficient')
+
+    # AUC evaluation parameters
+    parser.add_argument('--edge_score_agg', type=str, default='max', choices=['max', 'mean'],
+                       help='How to aggregate node scores to edge scores')
+    parser.add_argument('--debug_eval_graph', type=int, default=-1,
+                       help='Graph ID to run debug evaluation on (-1 to disable)')
 
     args = parser.parse_args()
+    
+    # Set dataset-specific defaults for target_size_k
+    if args.target_size_k == 8:  # Only if using default
+        if args.dataset in ['syn1', 'syn2', 'syn3', 'syn4']:
+            args.target_size_k = 8  # Synthetic datasets typically have ~8 edge motifs
+        elif args.dataset == 'ba2':
+            args.target_size_k = 10  # BA-Shapes has ~10 edge motifs
+        elif args.dataset == 'mutag':
+            args.target_size_k = 6   # Mutag typically has smaller motifs
+    
     seed_all(args.seed)
 
     print('= ' * 20)

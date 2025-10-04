@@ -101,7 +101,28 @@ class Generator:
                  # Causal mechanism parameters
                  use_causal: bool = False,
                  causal_explainer: Optional[Union[NodeLevelCausalExplainer, GraphLevelCausalExplainer]] = None,
-                 causal_weight: float = 0.5):
+                 causal_weight: float = 0.5,
+                 # New parameters for STOP action and penalties
+                 target_size_k: int = 8,
+                 lambda_size: float = 0.5,
+                 lambda_radius: float = 1.0,
+                 lambda_radius_min: float = 0.2,
+                 step_cost: float = 0.001,
+                 stop_bias: float = 0.5,
+                 fidelity_thresh: float = 0.9,
+                 # PPO stability parameters
+                 ppo_clip: float = 0.1,
+                 kl_target: float = 0.0075,
+                 lr: float = 1e-4,
+                 gamma: float = 0.99,
+                 gae_lambda: float = 0.95,
+                 max_grad_norm: float = 0.5,
+                 use_value_clip: bool = True,
+                 # Entropy scheduling
+                 entropy_coeff_start: float = 1e-3,
+                 entropy_coeff_end: float = 1e-4,
+                 # Causal reward scheduling
+                 causal_warmup_epochs: int = 5):
         self.graph = graph
         self.model = model
         self.optimizer = optimizer
@@ -127,15 +148,37 @@ class Generator:
             self.device = torch.device('cpu')
         else:
             self.device = device
-        # PPO hyperparameters (defaults)
-        self.clip_range = 0.2
-        self.vf_clip = 0.2
+        
+        # New parameters for STOP action and penalties
+        self.target_size_k = target_size_k
+        self.lambda_size = lambda_size
+        self.lambda_radius = lambda_radius
+        self.lambda_radius_min = lambda_radius_min
+        self.step_cost = step_cost
+        self.stop_bias = stop_bias
+        self.fidelity_thresh = fidelity_thresh
+        
+        # PPO stability parameters
+        self.clip_range = ppo_clip
+        self.vf_clip = ppo_clip if use_value_clip else None
         self.ppo_epochs = 4
         self.minibatch_size = 256
-        self.gamma = 0.99
+        self.gamma = gamma
         self.use_gae = True
-        self.gae_lambda = 0.90
+        self.gae_lambda = gae_lambda
         self.reward_norm = False
+        self.kl_target = kl_target
+        self.max_grad_norm = max_grad_norm
+        
+        # Entropy scheduling
+        self.entropy_coeff_start = entropy_coeff_start
+        self.entropy_coeff_end = entropy_coeff_end
+        self.current_entropy_coef = entropy_coeff_start
+        
+        # Causal reward scheduling
+        self.causal_warmup_epochs = causal_warmup_epochs
+        self.current_epoch = 0
+        
         # Monitoring
         self.last_approx_kl = 0.0
         self.last_clip_frac = 0.0
@@ -162,6 +205,81 @@ class Generator:
             print(f"[CAUSAL] Initialized causal reward calculator with weight {self.causal_weight}")
         else:
             print("[CAUSAL] Causal mechanism not enabled")
+
+    def update_entropy_coef(self, epoch: int, total_epochs: int):
+        """
+        Update entropy coefficient using linear decay schedule.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            total_epochs: Total number of epochs
+        """
+        if total_epochs > 1:
+            progress = epoch / (total_epochs - 1)
+            self.current_entropy_coef = self.entropy_coeff_start + progress * (self.entropy_coeff_end - self.entropy_coeff_start)
+        else:
+            self.current_entropy_coef = self.entropy_coeff_start
+
+    def get_effective_causal_weight(self, epoch: int) -> float:
+        """
+        Get effective causal weight with warmup scheduling.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            
+        Returns:
+            Effective causal weight considering warmup
+        """
+        if epoch < self.causal_warmup_epochs:
+            return self.causal_weight * (epoch / self.causal_warmup_epochs)
+        else:
+            return self.causal_weight
+
+    def get_effective_lambda_radius(self, epoch: int, total_epochs: int) -> float:
+        """
+        Get effective lambda_radius with linear decay schedule.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+            total_epochs: Total number of epochs
+            
+        Returns:
+            Effective lambda_radius considering decay
+        """
+        if total_epochs > 1:
+            progress = epoch / (total_epochs - 1)
+            return self.lambda_radius + progress * (self.lambda_radius_min - self.lambda_radius)
+        else:
+            return self.lambda_radius
+
+    def update_epoch(self, epoch: int):
+        """
+        Update current epoch for scheduling.
+        
+        Args:
+            epoch: Current epoch (0-indexed)
+        """
+        self.current_epoch = epoch
+
+    def get_early_stop_rate(self, selected_nodes: List[List[int]]) -> float:
+        """
+        Calculate the rate of early stopping (STOP action chosen before max steps).
+        
+        Args:
+            selected_nodes: List of trajectories
+            
+        Returns:
+            Early stop rate (0.0 to 1.0)
+        """
+        early_stops = 0
+        total_trajectories = len(selected_nodes)
+        
+        for trajectory in selected_nodes:
+            # Check if trajectory ended with EOS before reaching max_size
+            if trajectory[-1] == 'EOS' and len(trajectory) < self.max_size:
+                early_stops += 1
+        
+        return early_stops / total_trajectories if total_trajectories > 0 else 0.0
 
     def generate(self, seeds: List[int], max_size: Optional[int] = None):
         max_size = self.max_size if max_size is None else max_size
@@ -274,7 +392,37 @@ class Generator:
         # compute reward matrix [B, T]
         rewards = np.zeros(logps.shape, dtype=np.float32)
         final_scores = fn(selected_nodes)
-        rewards[np.arange(logps.size(0)), lengths.cpu().numpy() - 2] = final_scores
+        
+        # Add step cost penalty for each step
+        for i in range(logps.size(0)):
+            for t in range(lengths[i].item() - 1):  # -1 to exclude EOS step
+                rewards[i, t] -= self.step_cost
+        
+        # Add final rewards
+        rewards[np.arange(logps.size(0)), lengths.cpu().numpy() - 2] += final_scores
+        
+        # Add size penalty and radius penalty
+        for i, trajectory in enumerate(selected_nodes):
+            # Remove EOS if present
+            clean_trajectory = [x for x in trajectory if x != 'EOS']
+            size = len(clean_trajectory)
+            
+            # Size penalty: hinge loss on target size
+            if size > self.target_size_k:
+                size_penalty = self.lambda_size * (size - self.target_size_k)
+                rewards[i, lengths[i].item() - 2] -= size_penalty
+            
+            # Radius penalty: graph radius of explanation
+            if len(clean_trajectory) > 1:
+                radius = self.graph.subgraph_depth(clean_trajectory)
+                effective_lambda_radius = self.get_effective_lambda_radius(self.current_epoch, 100)  # Assume 100 total epochs
+                radius_penalty = effective_lambda_radius * radius
+                rewards[i, lengths[i].item() - 2] -= radius_penalty
+            
+            # STOP bonus for fidelity preservation
+            if hasattr(self, 'fidelity_thresh') and final_scores[i] >= self.fidelity_thresh:
+                stop_bonus = self.lambda_size * self.target_size_k
+                rewards[i, lengths[i].item() - 2] += stop_bonus
         if self.n_rollouts:
             for k in range(2, logps.shape[1] + 1):
                 valid_idx = [i for i, x in enumerate(selected_nodes) if len(x) >= k
@@ -296,14 +444,14 @@ class Generator:
 
         if policy == "PPO":
             print(f"[DEBUG] PPO training path taken", flush=True)
-            # hyper-params (expose via __init__)
-            gamma = getattr(self, "gamma", 0.99)
-            use_gae = getattr(self, "use_gae", False)
-            lam = getattr(self, "gae_lambda", 0.95)
-            clip_range = getattr(self, "clip_range", 0.2)
-            vf_clip = getattr(self, "vf_clip", 0.2)
-            ppo_epochs = getattr(self, "ppo_epochs", 4)
-            mb_size = getattr(self, "minibatch_size", 256)
+            # hyper-params (use new parameters)
+            gamma = self.gamma
+            use_gae = self.use_gae
+            lam = self.gae_lambda
+            clip_range = self.clip_range
+            vf_clip = self.vf_clip
+            ppo_epochs = self.ppo_epochs
+            mb_size = self.minibatch_size
 
             # reward normalization (masked, per rollout batch)
             if getattr(self, "reward_norm", False):
@@ -392,19 +540,30 @@ class Generator:
 
                     # value loss with clipping
                     v_pred = mb_values
-                    v_clipped = mb_values.detach() + (v_pred - mb_values.detach()).clamp(-vf_clip, vf_clip)
-                    v_loss_unclipped = (v_pred - mb_returns).pow(2)
-                    v_loss_clipped = (v_clipped - mb_returns).pow(2)
-                    value_loss = torch.max(v_loss_unclipped, v_loss_clipped).mean()
+                    if vf_clip is not None:
+                        v_clipped = mb_values.detach() + (v_pred - mb_values.detach()).clamp(-vf_clip, vf_clip)
+                        v_loss_unclipped = (v_pred - mb_returns).pow(2)
+                        v_loss_clipped = (v_clipped - mb_returns).pow(2)
+                        value_loss = torch.max(v_loss_unclipped, v_loss_clipped).mean()
+                    else:
+                        value_loss = (v_pred - mb_returns).pow(2).mean()
 
                     entropy_loss = mb_ent.mean()
 
-                    loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy_loss
+                    # KL penalty if KL divergence exceeds target
+                    with torch.no_grad():
+                        approx_kl = (mb_old - mb_logps).mean()
+                    
+                    kl_penalty = 0.0
+                    if approx_kl > self.kl_target:
+                        kl_penalty = 10.0 * (approx_kl - self.kl_target)
+
+                    loss = policy_loss + 0.5 * value_loss - self.current_entropy_coef * entropy_loss + kl_penalty
 
                     self.optimizer.zero_grad()
                     loss.backward()
-                    # gradient clipping
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                    # gradient clipping with new parameter
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
                     self.optimizer.step()
 
             # For monitoring (approx KL and clip fraction on the last minibatch)
@@ -531,7 +690,7 @@ class Generator:
 
     def _sample_actions(self, batch_logits: List, causal_bias: Optional[List] = None) -> (List, List, List):
         """
-        Sample actions with optional causal bias.
+        Sample actions with optional causal bias and STOP bias.
         
         Args:
             batch_logits: List of logits for each batch element
@@ -546,6 +705,14 @@ class Generator:
         for i, logits in enumerate(batch_logits):
             # logits are expected to be log-probabilities (log-softmax output)
             ps = torch.exp(logits)
+            
+            # Apply STOP bias to the last logit (STOP action)
+            if len(logits) > 0:
+                # Add bias to STOP action (last index)
+                stop_logit_idx = len(logits) - 1
+                logits[stop_logit_idx] += self.stop_bias
+                ps = torch.exp(logits)
+                ps = ps / ps.sum()  # Renormalize
             
             # Apply causal bias if available
             if causal_bias is not None and i < len(causal_bias):
