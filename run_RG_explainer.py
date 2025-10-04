@@ -524,7 +524,6 @@ class Runner:
                     print("g_id", i, "n_id", pred_sgs[idx][0] - self.each_g_start_nid[self.n_to_g_index[pred_sgs[idx][0]]] ,"len",len(pred_sgs[idx]), f"p_loss={p_loss[idx]:.2f}", f"size_loss={s_loss[idx]:.2f}", f"sim_loss={sim_loss[idx]:.2f}",f"r_p={r_p[idx]:.2f}", "sgs", [x - self.each_g_start_nid[self.n_to_g_index[x]] for x in pred_sgs[idx]], flush=True)
                 else:
                     print("g_id", i, "n_id", "N/A (empty)", "len", 0, f"p_loss={p_loss[idx] if idx < len(p_loss) else 0:.2f}", f"size_loss={s_loss[idx] if idx < len(s_loss) else 0:.2f}", f"sim_loss={sim_loss[idx] if idx < len(sim_loss) else 0:.2f}",f"r_p={r_p[idx] if idx < len(r_p) else 0:.2f}", "sgs", [], flush=True)
-            print(f"avg_p_loss={np.mean(p_loss):.2f}", f"avg_size_loss={np.mean(s_loss):.2f}", f"avg_sim_loss={np.mean(sim_loss):.2f}", f"r_p={np.mean(r_p):.2f}", flush=True)
 
         elif self.args.dataset == "ba2":
 

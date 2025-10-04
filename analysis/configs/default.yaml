@@ -1,0 +1,28 @@
+# Default configuration for PPO + Causal GNN Explainer Log Analysis
+
+# PPO hyperparameters for analysis
+kl_target: 0.01
+clip_range: 0.2
+
+# Analysis parameters
+ema_window: 5
+
+# Warning thresholds
+warn:
+  clipfrac_hi: 0.4      # Clip fraction above this triggers warning
+  expv_lo: 0.1          # Explained variance below this triggers warning
+  entropy_collapse: 0.2 # Entropy below this triggers warning
+
+# Plotting configuration
+plots:
+  dpi: 160
+  style: default
+  figsize:
+    width: 10
+    height: 6
+
+# Analysis settings
+analysis:
+  min_epochs_for_trends: 5
+  late_epoch_threshold: 0.7  # Consider epochs after this fraction as "late"
+  key_epoch_interval: 5      # Show every Nth epoch in summary table

@@ -422,7 +422,8 @@ class Generator:
 
                 # Print diagnostics
                 print(f"[Diagnostics] KL={approx_kl:.4f}, ClipFrac={clip_frac:.3f}, "
-                      f"Entropy={mb_ent.mean().item():.4f}, ExplainedVar={ev:.4f}", flush=True)
+                      f"Entropy={mb_ent.mean().item():.4f}, ExplainedVar={ev:.4f}, "
+                      f"PolicyLoss={policy_loss.item():.4f}, ValueLoss={value_loss.item():.4f}", flush=True)
 
             # cache current logps for next rollout
             self.old_logps = old_logps
