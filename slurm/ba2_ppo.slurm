@@ -60,13 +60,80 @@ export PYTHONNOUSERSITE=1
 # PY
 
 ## ==================== Params =====================
+# Core Parameters
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="ba2"
 POLICY="PPO"
+MODEL="GNN"
+
+# Training Parameters
 N_EPOCHS=10
+N_ROLLOUTS=5
+PRETRAIN_G_BATCH_SIZE=32
+G_BATCH_SIZE=128
+N_G_UPDATES=1
+N_L_UPDATES=10
+EVAL_EVERY=1
+
+# Learning Rates
+L_LR=0.01
+G_LR=0.01
+LR=0.0001
+
+# Regularization Parameters
 SIZE_REG=0.01
 SIM_REG=0.01
-RADIUS_PENALTY=0.01
+RADIUS_PENALTY=0.1
+ENTROPY_COEF=0.0
+
+# PPO Parameters
+PPO_EPOCHS=4
+MINIBATCH_SIZE=256
+CLIP_EPS=0.2
+GRAD_CLIP=1.0
+PPO_CLIP=0.1
+KL_TARGET=0.0075
+GAMMA=0.99
+GAE_LAMBDA=0.95
+MAX_GRAD_NORM=0.5
+VF_CLIP=0.2
+
+# Pretraining Parameters
+PRETRAIN_L_SAMPLE_RATE=1.0
+UPDATE_L_SAMPLE_RATE=0.2
+PRETRAIN_L_ITER=200
+PRETRAIN_LIST=10
+PRETRAIN_SET=25
+
+# Model Architecture
+HIDDEN_SIZE=64
+N_HOP=3
+MAX_SIZE=20
+
+# Causal Parameters
+CAUSAL_WEIGHT=0.5
+CAUSAL_WARMUP_EPOCHS=5
+
+# Reward Parameters
+TARGET_SIZE_K=10
+LAMBDA_SIZE=0.5
+LAMBDA_RADIUS=1.0
+LAMBDA_RADIUS_MIN=0.2
+STEP_COST=0.001
+STOP_BIAS=0.5
+FIDELITY_THRESH=0.9
+
+# Entropy Decay
+ENTROPY_DECAY_START=0.001
+ENTROPY_DECAY_END=0.0001
+ENTROPY_DECAY_FINAL=0.0
+ENTROPY_COEFF_START=0.001
+ENTROPY_COEFF_END=0.0001
+
+# Other Parameters
+FRONTIER_SHAPING_BETA=0.0
+EDGE_SCORE_AGG="max"
+DEBUG_EVAL_GRAPH=-1
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
 
@@ -101,12 +168,62 @@ srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
 srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
   "${PYBIN}" run_RG_explainer.py \
     --dataset "${DATASET}" \
+    --model "${MODEL}" \
     --seed "${SEED}" \
-    --policy "${POLICY}" \
-    --n_epochs "${N_EPOCHS}" \
+    --with_attr \
+    --n_hop "${N_HOP}" \
+    --max_size "${MAX_SIZE}" \
+    --pretrain_l_sample_rate "${PRETRAIN_L_SAMPLE_RATE}" \
+    --update_l_sample_rate "${UPDATE_L_SAMPLE_RATE}" \
+    --l_lr "${L_LR}" \
+    --pretrain_l_iter "${PRETRAIN_L_ITER}" \
+    --hidden_size "${HIDDEN_SIZE}" \
+    --g_lr "${G_LR}" \
+    --n_rollouts "${N_ROLLOUTS}" \
+    --pretrain_g_batch_size "${PRETRAIN_G_BATCH_SIZE}" \
+    --g_batch_size "${G_BATCH_SIZE}" \
     --size_reg "${SIZE_REG}" \
     --sim_reg "${SIM_REG}" \
     --radius_penalty "${RADIUS_PENALTY}" \
+    --entropy_coef "${ENTROPY_COEF}" \
+    --pretrain_list "${PRETRAIN_LIST}" \
+    --pretrain_set "${PRETRAIN_SET}" \
+    --n_epochs "${N_EPOCHS}" \
+    --n_g_updates "${N_G_UPDATES}" \
+    --n_l_updates "${N_L_UPDATES}" \
+    --eval_every "${EVAL_EVERY}" \
+    --policy "${POLICY}" \
+    --ppo_epochs "${PPO_EPOCHS}" \
+    --minibatch_size "${MINIBATCH_SIZE}" \
+    --clip_eps "${CLIP_EPS}" \
+    --grad_clip "${GRAD_CLIP}" \
+    --frontier_shaping_beta "${FRONTIER_SHAPING_BETA}" \
+    --entropy_decay_start "${ENTROPY_DECAY_START}" \
+    --entropy_decay_end "${ENTROPY_DECAY_END}" \
+    --entropy_decay_final "${ENTROPY_DECAY_FINAL}" \
+    --use_causal \
+    --causal_weight "${CAUSAL_WEIGHT}" \
+    --causal_warmup_epochs "${CAUSAL_WARMUP_EPOCHS}" \
+    --target_size_k "${TARGET_SIZE_K}" \
+    --lambda_size "${LAMBDA_SIZE}" \
+    --lambda_radius "${LAMBDA_RADIUS}" \
+    --lambda_radius_min "${LAMBDA_RADIUS_MIN}" \
+    --step_cost "${STEP_COST}" \
+    --stop_bias "${STOP_BIAS}" \
+    --fidelity_thresh "${FIDELITY_THRESH}" \
+    --ppo_clip "${PPO_CLIP}" \
+    --kl_target "${KL_TARGET}" \
+    --lr "${LR}" \
+    --gamma "${GAMMA}" \
+    --gae_lambda "${GAE_LAMBDA}" \
+    --max_grad_norm "${MAX_GRAD_NORM}" \
+    --use_value_clip \
+    --entropy_coeff_start "${ENTROPY_COEFF_START}" \
+    --entropy_coeff_end "${ENTROPY_COEFF_END}" \
+    --edge_score_agg "${EDGE_SCORE_AGG}" \
+    --debug_eval_graph "${DEBUG_EVAL_GRAPH}" \
+    --vf_clip "${VF_CLIP}" \
+    --use_gae \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

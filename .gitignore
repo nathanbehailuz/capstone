@@ -13,3 +13,8 @@ slurm_out/
 datasets/pkls/*.pkl
 results/
 /datasets/pkls
+analysis_env/
+viz_env/
+notes/
+res
+pretrained/

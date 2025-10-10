@@ -78,7 +78,7 @@ def evaluation_auc_node(explanations, explanation_labels, edge_score_agg='max', 
             prediction_node.append(expl[1][i].item())
 
             # Graphs are defined bidirectional, so we need to retrieve both edges
-            pair = expl[0].T[i].numpy()
+            pair = expl[0].T[i].cpu().numpy()
             idx_edge = np.where((explanation_labels[0].T == pair).all(axis=1))[0]
             idx_edge_rev = np.where((explanation_labels[0].T == [pair[1], pair[0]]).all(axis=1))[0]
 

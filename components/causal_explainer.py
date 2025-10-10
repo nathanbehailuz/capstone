@@ -252,6 +252,27 @@ class GraphLevelCausalExplainer(nn.Module):
         # ========== STEP 5: Identify which graph each edge belongs to ==========
         
         batch = graph.batch if hasattr(graph, 'batch') else torch.zeros(graph.x.size(0), dtype=torch.int64, device=graph.x.device)
+        
+        # Bounds checking for edge indices
+        if ava_edge_index.size(1) == 0:
+            # No available edges, return empty results
+            return torch.tensor([], device=graph.x.device), torch.tensor([], device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device)
+        
+        # Ensure edge indices are within bounds
+        max_node_idx = graph.x.size(0) - 1
+        if torch.any(ava_edge_index[0] > max_node_idx) or torch.any(ava_edge_index[1] > max_node_idx):
+            print(f"[CAUSAL] Warning: Edge indices out of bounds. Max node idx: {max_node_idx}, Edge indices: {ava_edge_index.max()}")
+            # Filter out invalid edges
+            valid_mask = (ava_edge_index[0] <= max_node_idx) & (ava_edge_index[1] <= max_node_idx)
+            ava_edge_index = ava_edge_index[:, valid_mask]
+            ava_action_reps = ava_action_reps[valid_mask]
+            if ava_edge_attr is not None:
+                ava_edge_attr = ava_edge_attr[valid_mask]
+        
+        if ava_edge_index.size(1) == 0:
+            # No valid edges after filtering
+            return torch.tensor([], device=graph.x.device), torch.tensor([], device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device)
+        
         ava_action_batch = batch[ava_edge_index[0]]  # Batch assignment for each edge
         ava_y_batch = graph.y[ava_action_batch] if hasattr(graph, 'y') else torch.zeros(len(ava_action_batch), dtype=torch.int64, device=graph.x.device)
         
@@ -301,16 +322,59 @@ class GraphLevelCausalExplainer(nn.Module):
         # ========== STEP 8: Select Best Action per Graph ==========
         
         # Use scatter_max to find best edge for each graph in the batch
-        from torch_scatter import scatter_max
-        selected_action_probs, selected_actions = scatter_max(
-            action_probs,
-            ava_action_batch
-        )  # Returns: [num_active_graphs], [num_active_graphs]
+        try:
+            from torch_scatter import scatter_max
+            # Bounds checking for scatter operation
+            if len(ava_action_batch) == 0 or len(action_probs) == 0:
+                return torch.tensor([], device=graph.x.device), torch.tensor([], device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device)
+            
+            # Ensure batch indices are valid
+            max_batch_idx = unique_batch.max().item() if len(unique_batch) > 0 else 0
+            if torch.any(ava_action_batch > max_batch_idx):
+                print(f"[CAUSAL] Warning: Batch indices out of bounds. Max batch idx: {max_batch_idx}, Batch indices: {ava_action_batch.max()}")
+                return torch.tensor([], device=graph.x.device), torch.tensor([], device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device)
+            
+            selected_action_probs, selected_actions = scatter_max(
+                action_probs,
+                ava_action_batch
+            )  # Returns: [num_active_graphs], [num_active_graphs]
+        except ImportError:
+            # Fallback implementation if torch_scatter is not available
+            print("[WARNING] torch_scatter not available, using fallback implementation")
+            selected_action_probs = []
+            selected_actions = []
+            for batch_id in torch.unique(ava_action_batch):
+                mask = ava_action_batch == batch_id
+                batch_probs = action_probs[mask]
+                if len(batch_probs) > 0:
+                    max_prob, max_idx = torch.max(batch_probs, dim=0)
+                    selected_action_probs.append(max_prob)
+                    # Find the original index in the full tensor
+                    batch_indices = torch.where(mask)[0]
+                    selected_actions.append(batch_indices[max_idx])
+            selected_action_probs = torch.stack(selected_action_probs) if selected_action_probs else torch.tensor([])
+            selected_actions = torch.stack(selected_actions) if selected_actions else torch.tensor([], dtype=torch.long)
+        except Exception as e:
+            print(f"[CAUSAL] Error in scatter_max: {e}")
+            return torch.tensor([], device=graph.x.device), torch.tensor([], device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device), torch.tensor([], dtype=torch.long, device=graph.x.device)
         
         if train_flag:
             # During training, add exploration with random selection
             rand_action_probs = torch.rand(action_probs.size()).to(action_probs.device)
-            _, rand_actions = scatter_max(rand_action_probs, ava_action_batch)
+            try:
+                from torch_scatter import scatter_max
+                _, rand_actions = scatter_max(rand_action_probs, ava_action_batch)
+            except ImportError:
+                # Fallback implementation
+                rand_actions = []
+                for batch_id in torch.unique(ava_action_batch):
+                    mask = ava_action_batch == batch_id
+                    batch_probs = rand_action_probs[mask]
+                    if len(batch_probs) > 0:
+                        _, max_idx = torch.max(batch_probs, dim=0)
+                        batch_indices = torch.where(mask)[0]
+                        rand_actions.append(batch_indices[max_idx])
+                rand_actions = torch.stack(rand_actions) if rand_actions else torch.tensor([], dtype=torch.long)
             return action_probs, action_probs[rand_actions], rand_actions, unique_batch
         
         return action_probs, selected_action_probs, selected_actions, unique_batch

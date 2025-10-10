@@ -1,0 +1,793 @@
+{
+  "metadata": {
+    "dataset": "syn3",
+    "seed": "5",
+    "source_file": "results/syn3_ppo_seed_5.txt"
+  },
+  "epochs": [
+    {
+      "epoch": 1,
+      "AUC": 0.7079312623925975,
+      "node_metrics": {
+        "p_loss_mean": 0.8099999999999999,
+        "p_loss_std": 0.8374353462707873,
+        "size_loss_mean": 0.40240000000000004,
+        "size_loss_std": 0.013180071536766615,
+        "sim_loss_mean": 0.24380000000000002,
+        "sim_loss_std": 0.35643867721144534,
+        "r_p_mean": 0.61,
+        "r_p_std": 0.0931314629314664
+      },
+      "diagnostics": {
+        "KL_mean": 0.00014,
+        "KL_std": 0.0009686893074453616,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.384395,
+        "Entropy_std": 0.03622764881221992,
+        "ExplainedVar_mean": -0.0003275,
+        "ExplainedVar_std": 0.00013394889955616542,
+        "PolicyLoss_mean": -0.0015524999999999998,
+        "PolicyLoss_std": 0.06877423111445605,
+        "ValueLoss_mean": 11230.93777,
+        "ValueLoss_std": 529.5081212316749
+      }
+    },
+    {
+      "epoch": 2,
+      "AUC": 0.7222886498828335,
+      "node_metrics": {
+        "p_loss_mean": 0.5464,
+        "p_loss_std": 0.5203443130097922,
+        "size_loss_mean": 0.4084,
+        "size_loss_std": 0.012834901397266387,
+        "sim_loss_mean": 0.13,
+        "sim_loss_std": 0.24930924980998262,
+        "r_p_mean": 0.574,
+        "r_p_std": 0.09858177999477781
+      },
+      "diagnostics": {
+        "KL_mean": 0.0002075,
+        "KL_std": 0.0010766490035861627,
+        "ClipFrac_mean": 0.001475,
+        "ClipFrac_std": 0.0049870987403653685,
+        "Entropy_mean": 1.3454525,
+        "Entropy_std": 0.042350194426339034,
+        "ExplainedVar_mean": -0.000835,
+        "ExplainedVar_std": 0.00019020906177016694,
+        "PolicyLoss_mean": 0.004305000000000001,
+        "PolicyLoss_std": 0.07427632728448409,
+        "ValueLoss_mean": 11194.100115,
+        "ValueLoss_std": 558.6358151694693
+      }
+    },
+    {
+      "epoch": 3,
+      "AUC": 0.6849876825091631,
+      "node_metrics": {
+        "p_loss_mean": 0.723,
+        "p_loss_std": 0.7721775464653878,
+        "size_loss_mean": 0.4036,
+        "size_loss_std": 0.01495025765937271,
+        "sim_loss_mean": 0.2158,
+        "sim_loss_std": 0.33674971024031897,
+        "r_p_mean": 0.606,
+        "r_p_std": 0.12190662200961816
+      },
+      "diagnostics": {
+        "KL_mean": 0.0005075,
+        "KL_std": 0.0024668455409848676,
+        "ClipFrac_mean": 0.023575,
+        "ClipFrac_std": 0.03154556127092108,
+        "Entropy_mean": 1.35754,
+        "Entropy_std": 0.03441677289360896,
+        "ExplainedVar_mean": -0.00143,
+        "ExplainedVar_std": 0.00022440805324001713,
+        "PolicyLoss_mean": -0.0039825,
+        "PolicyLoss_std": 0.05754251889489398,
+        "ValueLoss_mean": 10907.4790075,
+        "ValueLoss_std": 450.27899391267215
+      }
+    },
+    {
+      "epoch": 4,
+      "AUC": 0.6955867331610888,
+      "node_metrics": {
+        "p_loss_mean": 0.5604,
+        "p_loss_std": 0.5613539027045529,
+        "size_loss_mean": 0.406,
+        "size_loss_std": 0.01414213562373094,
+        "sim_loss_mean": 0.1684,
+        "sim_loss_std": 0.2930721162207733,
+        "r_p_mean": 0.598,
+        "r_p_std": 0.12370141800451008
+      },
+      "diagnostics": {
+        "KL_mean": 0.0004,
+        "KL_std": 0.0008105079129305752,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.4263825,
+        "Entropy_std": 0.04376711028052563,
+        "ExplainedVar_mean": -0.0019925,
+        "ExplainedVar_std": 0.0002411377944193649,
+        "PolicyLoss_mean": 0.0028724999999999996,
+        "PolicyLoss_std": 0.07519397134693098,
+        "ValueLoss_mean": 10966.01318,
+        "ValueLoss_std": 557.771430161483
+      }
+    },
+    {
+      "epoch": 5,
+      "AUC": 0.7258156582346933,
+      "node_metrics": {
+        "p_loss_mean": 0.6752,
+        "p_loss_std": 0.7410506606384297,
+        "size_loss_mean": 0.406,
+        "size_loss_std": 0.012289036095775169,
+        "sim_loss_mean": 0.178,
+        "sim_loss_std": 0.33629433172597545,
+        "r_p_mean": 0.608,
+        "r_p_std": 0.11752550743544646
+      },
+      "diagnostics": {
+        "KL_mean": 0.0014449999999999999,
+        "KL_std": 0.002589520300097179,
+        "ClipFrac_mean": 0.02375,
+        "ClipFrac_std": 0.024678185113837292,
+        "Entropy_mean": 1.4422725,
+        "Entropy_std": 0.04525787075619684,
+        "ExplainedVar_mean": -0.0026175,
+        "ExplainedVar_std": 0.0002827407075260082,
+        "PolicyLoss_mean": -0.00023249999999999996,
+        "PolicyLoss_std": 0.06701061679182271,
+        "ValueLoss_mean": 11035.51145,
+        "ValueLoss_std": 509.2141117545959
+      }
+    },
+    {
+      "epoch": 6,
+      "AUC": 0.7261611488313404,
+      "node_metrics": {
+        "p_loss_mean": 0.6792,
+        "p_loss_std": 0.7281590990088551,
+        "size_loss_mean": 0.4056,
+        "size_loss_std": 0.013425531570823681,
+        "sim_loss_mean": 0.1826,
+        "sim_loss_std": 0.3177395288019187,
+        "r_p_mean": 0.588,
+        "r_p_std": 0.12061069096688819
+      },
+      "diagnostics": {
+        "KL_mean": 0.00010500000000000003,
+        "KL_std": 0.0027004225690217543,
+        "ClipFrac_mean": 0.019575,
+        "ClipFrac_std": 0.026986119413980977,
+        "Entropy_mean": 1.350455,
+        "Entropy_std": 0.03499317112867917,
+        "ExplainedVar_mean": -0.003225,
+        "ExplainedVar_std": 0.000326402300142725,
+        "PolicyLoss_mean": -0.0010100000000000005,
+        "PolicyLoss_std": 0.05439752916711548,
+        "ValueLoss_mean": 10972.9613675,
+        "ValueLoss_std": 441.0952590026182
+      }
+    },
+    {
+      "epoch": 7,
+      "AUC": 0.7314546656251878,
+      "node_metrics": {
+        "p_loss_mean": 0.48160000000000003,
+        "p_loss_std": 0.3678196097356997,
+        "size_loss_mean": 0.4088,
+        "size_loss_std": 0.012229105462304385,
+        "sim_loss_mean": 0.1036,
+        "sim_loss_std": 0.18892564134913944,
+        "r_p_mean": 0.608,
+        "r_p_std": 0.10466662333722401
+      },
+      "diagnostics": {
+        "KL_mean": -0.0001225,
+        "KL_std": 0.0012641988443076184,
+        "ClipFrac_mean": 0.008,
+        "ClipFrac_std": 0.016046407058503142,
+        "Entropy_mean": 1.3356474999999999,
+        "Entropy_std": 0.04374478423121889,
+        "ExplainedVar_mean": -0.00418,
+        "ExplainedVar_std": 0.00041212395446777155,
+        "PolicyLoss_mean": 0.0011300000000000004,
+        "PolicyLoss_std": 0.06686936825076494,
+        "ValueLoss_mean": 10689.027535,
+        "ValueLoss_std": 485.4578523945555
+      }
+    },
+    {
+      "epoch": 8,
+      "AUC": 0.732316889983777,
+      "node_metrics": {
+        "p_loss_mean": 0.4908,
+        "p_loss_std": 0.4381726432653258,
+        "size_loss_mean": 0.4068,
+        "size_loss_std": 0.013161477492892584,
+        "sim_loss_mean": 0.0954,
+        "sim_loss_std": 0.17306610745902967,
+        "r_p_mean": 0.594,
+        "r_p_std": 0.10768434597167287
+      },
+      "diagnostics": {
+        "KL_mean": -8.249999999999997e-05,
+        "KL_std": 0.0028732084719137463,
+        "ClipFrac_mean": 0.034725,
+        "ClipFrac_std": 0.0330826374014512,
+        "Entropy_mean": 1.3186225,
+        "Entropy_std": 0.032463340172080336,
+        "ExplainedVar_mean": -0.0050075,
+        "ExplainedVar_std": 0.00045763466562257627,
+        "PolicyLoss_mean": -0.0009850000000000004,
+        "PolicyLoss_std": 0.05045829732790009,
+        "ValueLoss_mean": 10629.6980975,
+        "ValueLoss_std": 401.1399997174735
+      }
+    },
+    {
+      "epoch": 9,
+      "AUC": 0.7433575677461995,
+      "node_metrics": {
+        "p_loss_mean": 0.4876,
+        "p_loss_std": 0.40241394060325086,
+        "size_loss_mean": 0.4108,
+        "size_loss_std": 0.014119027543549515,
+        "sim_loss_mean": 0.093,
+        "sim_loss_std": 0.1647292150339893,
+        "r_p_mean": 0.596,
+        "r_p_std": 0.11421426337889534
+      },
+      "diagnostics": {
+        "KL_mean": 0.00082,
+        "KL_std": 0.0013494918321828426,
+        "ClipFrac_mean": 0.00655,
+        "ClipFrac_std": 0.012330803621367018,
+        "Entropy_mean": 1.30463,
+        "Entropy_std": 0.03395844519408978,
+        "ExplainedVar_mean": -0.0058825,
+        "ExplainedVar_std": 0.0005952321245121789,
+        "PolicyLoss_mean": -0.0021699999999999996,
+        "PolicyLoss_std": 0.059573428941915335,
+        "ValueLoss_mean": 10595.014155,
+        "ValueLoss_std": 484.57503677455793
+      }
+    },
+    {
+      "epoch": 10,
+      "AUC": 0.7155861323078773,
+      "node_metrics": {
+        "p_loss_mean": 0.442,
+        "p_loss_std": 0.12059376908803017,
+        "size_loss_mean": 0.4072,
+        "size_loss_std": 0.011959114020832187,
+        "sim_loss_mean": 0.0882,
+        "sim_loss_std": 0.15579539172142626,
+        "r_p_mean": 0.576,
+        "r_p_std": 0.12215747615103971
+      },
+      "diagnostics": {
+        "KL_mean": 0.000265,
+        "KL_std": 0.001032932097453031,
+        "ClipFrac_mean": 0.0009,
+        "ClipFrac_std": 0.002933449881134533,
+        "Entropy_mean": 1.28352,
+        "Entropy_std": 0.03258490448044922,
+        "ExplainedVar_mean": -0.0067175,
+        "ExplainedVar_std": 0.0006291579639404907,
+        "PolicyLoss_mean": -0.001515,
+        "PolicyLoss_std": 0.06335949345012482,
+        "ValueLoss_mean": 10539.171995,
+        "ValueLoss_std": 473.9204275951093
+      }
+    },
+    {
+      "epoch": 11,
+      "AUC": 0.7468004566484409,
+      "node_metrics": {
+        "p_loss_mean": 0.5036,
+        "p_loss_std": 0.47264673782383204,
+        "size_loss_mean": 0.4088,
+        "size_loss_std": 0.012879345908096723,
+        "sim_loss_mean": 0.1316,
+        "sim_loss_std": 0.2349933563976233,
+        "r_p_mean": 0.584,
+        "r_p_std": 0.0976457570893432
+      },
+      "diagnostics": {
+        "KL_mean": 9.750000000000001e-05,
+        "KL_std": 0.0014179232737551106,
+        "ClipFrac_mean": 0.00975,
+        "ClipFrac_std": 0.013149534456027574,
+        "Entropy_mean": 1.310285,
+        "Entropy_std": 0.037556067828903895,
+        "ExplainedVar_mean": -0.00768,
+        "ExplainedVar_std": 0.0006752777206453653,
+        "PolicyLoss_mean": 0.0032949999999999993,
+        "PolicyLoss_std": 0.05267035340877378,
+        "ValueLoss_mean": 10606.6173775,
+        "ValueLoss_std": 407.08441394901894
+      }
+    },
+    {
+      "epoch": 12,
+      "AUC": 0.7392417232470107,
+      "node_metrics": {
+        "p_loss_mean": 0.4366,
+        "p_loss_std": 0.16901406776372438,
+        "size_loss_mean": 0.4112,
+        "size_loss_std": 0.014090089149643362,
+        "sim_loss_mean": 0.0944,
+        "sim_loss_std": 0.13205070145630446,
+        "r_p_mean": 0.598,
+        "r_p_std": 0.10200040015927908
+      },
+      "diagnostics": {
+        "KL_mean": 0.0004975,
+        "KL_std": 0.0011223801403656335,
+        "ClipFrac_mean": 0.002,
+        "ClipFrac_std": 0.00373479824739141,
+        "Entropy_mean": 1.3230975,
+        "Entropy_std": 0.03824012852341347,
+        "ExplainedVar_mean": -0.008815,
+        "ExplainedVar_std": 0.0006765485560681868,
+        "PolicyLoss_mean": -0.0016824999999999995,
+        "PolicyLoss_std": 0.06883399163092428,
+        "ValueLoss_mean": 10283.4021425,
+        "ValueLoss_std": 472.3755810797345
+      }
+    },
+    {
+      "epoch": 13,
+      "AUC": 0.7533467523883914,
+      "node_metrics": {
+        "p_loss_mean": 0.4636,
+        "p_loss_std": 0.35642648152837053,
+        "size_loss_mean": 0.4096,
+        "size_loss_std": 0.0122823915772598,
+        "sim_loss_mean": 0.0912,
+        "sim_loss_std": 0.1563830984134403,
+        "r_p_mean": 0.6,
+        "r_p_std": 0.09689042833036096
+      },
+      "diagnostics": {
+        "KL_mean": -7e-05,
+        "KL_std": 0.0004926120853842977,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.25793,
+        "Entropy_std": 0.02828390137380409,
+        "ExplainedVar_mean": -0.00955,
+        "ExplainedVar_std": 0.000762922854587069,
+        "PolicyLoss_mean": 0.0007600000000000004,
+        "PolicyLoss_std": 0.047487892114052584,
+        "ValueLoss_mean": 10525.8167225,
+        "ValueLoss_std": 361.63036841299106
+      }
+    },
+    {
+      "epoch": 14,
+      "AUC": 0.778780868833744,
+      "node_metrics": {
+        "p_loss_mean": 0.452,
+        "p_loss_std": 0.1612324978636346,
+        "size_loss_mean": 0.4076,
+        "size_loss_std": 0.009806287029560275,
+        "sim_loss_mean": 0.08600000000000001,
+        "sim_loss_std": 0.16572660052764307,
+        "r_p_mean": 0.578,
+        "r_p_std": 0.11301074538037774
+      },
+      "diagnostics": {
+        "KL_mean": -4.999999999999997e-06,
+        "KL_std": 0.0007639136748115604,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.2979775,
+        "Entropy_std": 0.041637104307674956,
+        "ExplainedVar_mean": -0.010835,
+        "ExplainedVar_std": 0.0009627817602908346,
+        "PolicyLoss_mean": -0.003525,
+        "PolicyLoss_std": 0.06985838330471668,
+        "ValueLoss_mean": 10412.9368875,
+        "ValueLoss_std": 499.37249186561866
+      }
+    },
+    {
+      "epoch": 15,
+      "AUC": 0.7487652466502434,
+      "node_metrics": {
+        "p_loss_mean": 0.5144,
+        "p_loss_std": 0.4498124779351085,
+        "size_loss_mean": 0.4092,
+        "size_loss_std": 0.01226243641935709,
+        "sim_loss_mean": 0.1116,
+        "sim_loss_std": 0.20196342364348033,
+        "r_p_mean": 0.6,
+        "r_p_std": 0.10690449676496976
+      },
+      "diagnostics": {
+        "KL_mean": 0.00019,
+        "KL_std": 0.0011855540736459308,
+        "ClipFrac_mean": 0.0006000000000000001,
+        "ClipFrac_std": 0.002318266372606689,
+        "Entropy_mean": 1.275265,
+        "Entropy_std": 0.03166811508158503,
+        "ExplainedVar_mean": -0.01198,
+        "ExplainedVar_std": 0.001093148827458713,
+        "PolicyLoss_mean": 0.0006599999999999993,
+        "PolicyLoss_std": 0.06286479100989638,
+        "ValueLoss_mean": 10349.454389999999,
+        "ValueLoss_std": 485.3579378170906
+      }
+    },
+    {
+      "epoch": 16,
+      "AUC": 0.7324220392958,
+      "node_metrics": {
+        "p_loss_mean": 0.4638,
+        "p_loss_std": 0.3730562686671231,
+        "size_loss_mean": 0.4088,
+        "size_loss_std": 0.014090089149643362,
+        "sim_loss_mean": 0.093,
+        "sim_loss_std": 0.17054833535944453,
+        "r_p_mean": 0.594,
+        "r_p_std": 0.10768434597167285
+      },
+      "diagnostics": {
+        "KL_mean": -0.0005125,
+        "KL_std": 0.0027753666886395855,
+        "ClipFrac_mean": 0.029775,
+        "ClipFrac_std": 0.027756715519136204,
+        "Entropy_mean": 1.300735,
+        "Entropy_std": 0.04147365892485717,
+        "ExplainedVar_mean": -0.01286,
+        "ExplainedVar_std": 0.0011288296639690198,
+        "PolicyLoss_mean": -0.00012249999999999964,
+        "PolicyLoss_std": 0.054637389693909265,
+        "ValueLoss_mean": 10328.593965,
+        "ValueLoss_std": 418.24321395800405
+      }
+    },
+    {
+      "epoch": 17,
+      "AUC": 0.7526046986721145,
+      "node_metrics": {
+        "p_loss_mean": 0.4706,
+        "p_loss_std": 0.3731958505358049,
+        "size_loss_mean": 0.4084,
+        "size_loss_std": 0.011492677349210709,
+        "sim_loss_mean": 0.0966,
+        "sim_loss_std": 0.16797242242069843,
+        "r_p_mean": 0.6,
+        "r_p_std": 0.12936264483053453
+      },
+      "diagnostics": {
+        "KL_mean": -0.00026,
+        "KL_std": 0.0020915949012103733,
+        "ClipFrac_mean": 0.010975,
+        "ClipFrac_std": 0.015297875669516993,
+        "Entropy_mean": 1.3110249999999999,
+        "Entropy_std": 0.04213433188122154,
+        "ExplainedVar_mean": -0.014655,
+        "ExplainedVar_std": 0.001268140168585274,
+        "PolicyLoss_mean": -0.0057275,
+        "PolicyLoss_std": 0.06541483007384293,
+        "ValueLoss_mean": 10221.2531975,
+        "ValueLoss_std": 470.89679012577824
+      }
+    },
+    {
+      "epoch": 18,
+      "AUC": 0.7472360752268221,
+      "node_metrics": {
+        "p_loss_mean": 0.4524,
+        "p_loss_std": 0.25928126717949385,
+        "size_loss_mean": 0.4096,
+        "size_loss_std": 0.012929952570268284,
+        "sim_loss_mean": 0.0828,
+        "sim_loss_std": 0.13750012987006854,
+        "r_p_mean": 0.614,
+        "r_p_std": 0.10881551510024025
+      },
+      "diagnostics": {
+        "KL_mean": 9.25e-05,
+        "KL_std": 0.000748464239592459,
+        "ClipFrac_mean": 0.0002,
+        "ClipFrac_std": 0.000882885711452609,
+        "Entropy_mean": 1.2890325,
+        "Entropy_std": 0.031168930844672867,
+        "ExplainedVar_mean": -0.0157275,
+        "ExplainedVar_std": 0.0012808225522126045,
+        "PolicyLoss_mean": 0.0029924999999999995,
+        "PolicyLoss_std": 0.07470915018787773,
+        "ValueLoss_mean": 10250.29568,
+        "ValueLoss_std": 574.8726105591682
+      }
+    },
+    {
+      "epoch": 19,
+      "AUC": 0.7390073904945023,
+      "node_metrics": {
+        "p_loss_mean": 0.4186,
+        "p_loss_std": 0.14201192821415404,
+        "size_loss_mean": 0.4104,
+        "size_loss_std": 0.013546593818433927,
+        "sim_loss_mean": 0.0712,
+        "sim_loss_std": 0.08469970965904507,
+        "r_p_mean": 0.602,
+        "r_p_std": 0.10971205354872159
+      },
+      "diagnostics": {
+        "KL_mean": -0.00079,
+        "KL_std": 0.0014357701408776746,
+        "ClipFrac_mean": 0.012675,
+        "ClipFrac_std": 0.01817914767684146,
+        "Entropy_mean": 1.301365,
+        "Entropy_std": 0.027431037539852928,
+        "ExplainedVar_mean": -0.016815,
+        "ExplainedVar_std": 0.001337151584142336,
+        "PolicyLoss_mean": -0.0009475000000000003,
+        "PolicyLoss_std": 0.05877617251172625,
+        "ValueLoss_mean": 10116.1209975,
+        "ValueLoss_std": 475.5603711826094
+      }
+    },
+    {
+      "epoch": 20,
+      "AUC": 0.7287658475034549,
+      "node_metrics": {
+        "p_loss_mean": 0.4566,
+        "p_loss_std": 0.2834957437682158,
+        "size_loss_mean": 0.4084,
+        "size_loss_std": 0.012834901397266387,
+        "sim_loss_mean": 0.091,
+        "sim_loss_std": 0.1407885953173359,
+        "r_p_mean": 0.59,
+        "r_p_std": 0.10926470386270253
+      },
+      "diagnostics": {
+        "KL_mean": 0.0006475,
+        "KL_std": 0.0011944288410827395,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.30277,
+        "Entropy_std": 0.031219571442056046,
+        "ExplainedVar_mean": -0.0183725,
+        "ExplainedVar_std": 0.0014531993880876985,
+        "PolicyLoss_mean": -0.00026999999999999984,
+        "PolicyLoss_std": 0.062319360287688016,
+        "ValueLoss_mean": 10165.9649425,
+        "ValueLoss_std": 439.74000375994143
+      }
+    },
+    {
+      "epoch": 21,
+      "AUC": 0.7614432494141682,
+      "node_metrics": {
+        "p_loss_mean": 0.4288,
+        "p_loss_std": 0.15154496874202195,
+        "size_loss_mean": 0.4092,
+        "size_loss_std": 0.01226243641935709,
+        "sim_loss_mean": 0.103,
+        "sim_loss_std": 0.18444898636595586,
+        "r_p_mean": 0.592,
+        "r_p_std": 0.12094863136295271
+      },
+      "diagnostics": {
+        "KL_mean": 0.00109,
+        "KL_std": 0.0022434862979815074,
+        "ClipFrac_mean": 0.02255,
+        "ClipFrac_std": 0.03297158839100174,
+        "Entropy_mean": 1.3045275,
+        "Entropy_std": 0.028873401720668067,
+        "ExplainedVar_mean": -0.0202475,
+        "ExplainedVar_std": 0.00122996508184749,
+        "PolicyLoss_mean": 0.0016175,
+        "PolicyLoss_std": 0.05183315881329347,
+        "ValueLoss_mean": 9977.90811,
+        "ValueLoss_std": 393.5499765793834
+      }
+    },
+    {
+      "epoch": 22,
+      "AUC": 0.7497085861923932,
+      "node_metrics": {
+        "p_loss_mean": 0.4344,
+        "p_loss_std": 0.16215588368062658,
+        "size_loss_mean": 0.41000000000000003,
+        "size_loss_std": 0.012936264483053439,
+        "sim_loss_mean": 0.0736,
+        "sim_loss_std": 0.17219779799013998,
+        "r_p_mean": 0.592,
+        "r_p_std": 0.11752550743544647
+      },
+      "diagnostics": {
+        "KL_mean": 0.0004175,
+        "KL_std": 0.0020090675857478177,
+        "ClipFrac_mean": 0.011375,
+        "ClipFrac_std": 0.017018372425117508,
+        "Entropy_mean": 1.3022275,
+        "Entropy_std": 0.0378794443106291,
+        "ExplainedVar_mean": -0.0212425,
+        "ExplainedVar_std": 0.0013915288585230863,
+        "PolicyLoss_mean": -0.0024874999999999997,
+        "PolicyLoss_std": 0.060867448196881065,
+        "ValueLoss_mean": 10027.5678225,
+        "ValueLoss_std": 440.2682538430811
+      }
+    },
+    {
+      "epoch": 23,
+      "AUC": 0.7471129003184522,
+      "node_metrics": {
+        "p_loss_mean": 0.47200000000000003,
+        "p_loss_std": 0.3164858058525255,
+        "size_loss_mean": 0.4088,
+        "size_loss_std": 0.014090089149643362,
+        "sim_loss_mean": 0.13240000000000002,
+        "sim_loss_std": 0.2421043795808843,
+        "r_p_mean": 0.594,
+        "r_p_std": 0.10382481320346641
+      },
+      "diagnostics": {
+        "KL_mean": 0.000405,
+        "KL_std": 0.0014839223837605662,
+        "ClipFrac_mean": 0.003525,
+        "ClipFrac_std": 0.00900423689444486,
+        "Entropy_mean": 1.3188225,
+        "Entropy_std": 0.033046823715635755,
+        "ExplainedVar_mean": -0.02287,
+        "ExplainedVar_std": 0.0016278348054535978,
+        "PolicyLoss_mean": -0.0009525,
+        "PolicyLoss_std": 0.05756216700674863,
+        "ValueLoss_mean": 9903.192335,
+        "ValueLoss_std": 441.41278810521294
+      }
+    },
+    {
+      "epoch": 24,
+      "AUC": 0.7523102805984498,
+      "node_metrics": {
+        "p_loss_mean": 0.4872,
+        "p_loss_std": 0.4125631182384245,
+        "size_loss_mean": 0.4076,
+        "size_loss_std": 0.01333401358808917,
+        "sim_loss_mean": 0.1082,
+        "sim_loss_std": 0.17627309517232814,
+        "r_p_mean": 0.602,
+        "r_p_std": 0.10200040015927908
+      },
+      "diagnostics": {
+        "KL_mean": 0.00015749999999999998,
+        "KL_std": 0.0015526466238206097,
+        "ClipFrac_mean": 0.01135,
+        "ClipFrac_std": 0.021318765057801628,
+        "Entropy_mean": 1.3211275,
+        "Entropy_std": 0.03813763863651275,
+        "ExplainedVar_mean": -0.02326,
+        "ExplainedVar_std": 0.0014914800771424403,
+        "PolicyLoss_mean": -0.0037649999999999997,
+        "PolicyLoss_std": 0.057672117202024954,
+        "ValueLoss_mean": 9923.1010475,
+        "ValueLoss_std": 429.3313358913572
+      }
+    },
+    {
+      "epoch": 25,
+      "AUC": 0.7623895932223758,
+      "node_metrics": {
+        "p_loss_mean": 0.4202,
+        "p_loss_std": 0.12709453335278928,
+        "size_loss_mean": 0.40800000000000003,
+        "size_loss_std": 0.011428571428571415,
+        "sim_loss_mean": 0.0774,
+        "sim_loss_std": 0.09301766345316202,
+        "r_p_mean": 0.584,
+        "r_p_std": 0.09971387638065797
+      },
+      "diagnostics": {
+        "KL_mean": 0.0001925,
+        "KL_std": 0.001810565501686541,
+        "ClipFrac_mean": 0.006675,
+        "ClipFrac_std": 0.013533221232325914,
+        "Entropy_mean": 1.3212825,
+        "Entropy_std": 0.03580682421349888,
+        "ExplainedVar_mean": -0.025405,
+        "ExplainedVar_std": 0.0016520306075267274,
+        "PolicyLoss_mean": -0.0003700000000000001,
+        "PolicyLoss_std": 0.06730788120120015,
+        "ValueLoss_mean": 9981.50552,
+        "ValueLoss_std": 500.2110785220115
+      }
+    },
+    {
+      "epoch": 26,
+      "AUC": 0.712068136754191,
+      "node_metrics": {
+        "p_loss_mean": 0.5126000000000001,
+        "p_loss_std": 0.3912137575311388,
+        "size_loss_mean": 0.4068,
+        "size_loss_std": 0.013161477492892584,
+        "sim_loss_mean": 0.1208,
+        "sim_loss_std": 0.23018927438266173,
+        "r_p_mean": 0.592,
+        "r_p_std": 0.11036118809044551
+      },
+      "diagnostics": {
+        "KL_mean": -3.25e-05,
+        "KL_std": 0.0007647313924274997,
+        "ClipFrac_mean": 0.0,
+        "ClipFrac_std": 0.0,
+        "Entropy_mean": 1.35492,
+        "Entropy_std": 0.03345086867907343,
+        "ExplainedVar_mean": -0.02667,
+        "ExplainedVar_std": 0.0019493851759215168,
+        "PolicyLoss_mean": 0.00047499999999999973,
+        "PolicyLoss_std": 0.05383063063787935,
+        "ValueLoss_mean": 9886.401857500001,
+        "ValueLoss_std": 392.5170968540141
+      }
+    },
+    {
+      "epoch": 27,
+      "AUC": 0.7137775641410802,
+      "node_metrics": {
+        "p_loss_mean": 0.5454,
+        "p_loss_std": 0.5070008251814724,
+        "size_loss_mean": 0.4072,
+        "size_loss_std": 0.013254186862563648,
+        "sim_loss_mean": 0.1388,
+        "sim_loss_std": 0.2581459799004732,
+        "r_p_mean": 0.616,
+        "r_p_std": 0.11668901632378365
+      },
+      "diagnostics": {
+        "KL_mean": 0.0004525,
+        "KL_std": 0.001547369562871961,
+        "ClipFrac_mean": 0.0004,
+        "ClipFrac_std": 0.0012152872405004,
+        "Entropy_mean": 1.369565,
+        "Entropy_std": 0.038185079311837004,
+        "ExplainedVar_mean": -0.02775,
+        "ExplainedVar_std": 0.0018724726556491674,
+        "PolicyLoss_mean": -0.003245,
+        "PolicyLoss_std": 0.06684091311963554,
+        "ValueLoss_mean": 9839.779465,
+        "ValueLoss_std": 507.66244643179215
+      }
+    },
+    {
+      "epoch": 28,
+      "AUC": null,
+      "node_metrics": {
+        "p_loss_mean": null,
+        "p_loss_std": null,
+        "size_loss_mean": null,
+        "size_loss_std": null,
+        "sim_loss_mean": null,
+        "sim_loss_std": null,
+        "r_p_mean": null,
+        "r_p_std": null
+      },
+      "diagnostics": {
+        "KL_mean": null,
+        "KL_std": null,
+        "ClipFrac_mean": null,
+        "ClipFrac_std": null,
+        "Entropy_mean": null,
+        "Entropy_std": null,
+        "ExplainedVar_mean": null,
+        "ExplainedVar_std": null,
+        "PolicyLoss_mean": null,
+        "PolicyLoss_std": null,
+        "ValueLoss_mean": null,
+        "ValueLoss_std": null
+      }
+    }
+  ]
+}

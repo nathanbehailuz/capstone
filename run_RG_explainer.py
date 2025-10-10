@@ -110,7 +110,7 @@ class Runner:
             for seed_node in self.eval_seeds:
                 for nl in range(self.args.n_hop-1, self.args.n_hop, 1):
                     subgraph_node, _, *_ = ptgeom.utils.k_hop_subgraph(seed_node, nl+1, torch.LongTensor(self.graphs))
-                    self.pretrain_nodes.append(subgraph_node.numpy())
+                    self.pretrain_nodes.append(subgraph_node.cpu().numpy())
                     self.pretrain_eval_nodes.append(seed_node)
                     if len(subgraph_node)>max_size_in_sg:
                         max_size_in_sg = len(subgraph_node)
@@ -123,7 +123,9 @@ class Runner:
             edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
             whole_graph_original_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
-            print("Prediction Error for Whole Graph:", torch.sum(torch.abs(whole_graph_original_preds - ground_truth_labels)).item()/len(whole_graph_original_preds), flush=True)
+            # Move ground_truth_labels to same device as predictions
+            ground_truth_labels_device = ground_truth_labels.to(whole_graph_original_preds.device)
+            print("Prediction Error for Whole Graph:", torch.sum(torch.abs(whole_graph_original_preds - ground_truth_labels_device)).item()/len(whole_graph_original_preds), flush=True)
 
             subg_original_preds = []
             for i, es in enumerate(self.eval_seeds):
@@ -132,7 +134,9 @@ class Runner:
                 subg_original_preds.append(pred)
             subg_original_preds = torch.stack(subg_original_preds)
             subg_original_preds = torch.argmax(subg_original_preds, 1)
-            print("Prediction Error for Eval Seeds:", torch.sum(torch.abs(subg_original_preds-ground_truth_labels[self.eval_seeds])).item()/len(subg_original_preds), flush=True)
+            # Move ground_truth_labels to same device as predictions
+            eval_ground_truth = ground_truth_labels[self.eval_seeds].to(subg_original_preds.device)
+            print("Prediction Error for Eval Seeds:", torch.sum(torch.abs(subg_original_preds-eval_ground_truth)).item()/len(subg_original_preds), flush=True)
 
             self.original_preds = whole_graph_original_preds
             edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
@@ -204,15 +208,18 @@ class Runner:
             
             # graph embedding
             whole_graph_original_preds = []
+            # Pre-allocate edge weights to avoid repeated creation
+            max_edges = max(each_g_start_eid[i+1] - each_g_start_eid[i] for i in range(len(each_g_start_nid)))
+            edge_weights_template = torch.ones(max_edges, dtype=torch.float32, device=self.device)
+            
             for i in range(len(each_g_start_nid)):
-                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
-                edge_idx = edge_idx - each_g_start_nid[i]
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
                 
                 # Get the appropriate node features for these edges
                 node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 
-                # Create edge weights on the same device as edge_index
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                # Use pre-allocated edge weights
+                edge_weights = edge_weights_template[:edge_idx.size(1)]
                 pred = self.trained_model(node_feats_subset, edge_idx, edge_weights)[0]
                 whole_graph_original_preds.append(pred)
             whole_graph_original_preds = torch.stack(whole_graph_original_preds)
@@ -222,11 +229,10 @@ class Runner:
 
             g_embeds = []
             for i in range(len(each_g_start_nid)):
-                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
-                edge_idx = edge_idx - each_g_start_nid[i]
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
                 
                 node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                edge_weights = edge_weights_template[:edge_idx.size(1)]
                 g_embed = self.trained_model.graph_embedding(node_feats_subset, edge_idx, edge_weights)[0]
                 g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
@@ -234,11 +240,10 @@ class Runner:
             # node embedding
             n_embeds = []
             for i in range(len(each_g_start_nid)):
-                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]].clone().to(self.device)
-                edge_idx = edge_idx - each_g_start_nid[i]
+                edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
                 
                 node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                edge_weights = edge_weights_template[:edge_idx.size(1)]
                 temp = self.trained_model.embedding(node_feats_subset, edge_idx, edge_weights)
                 # Only keep embeddings for nodes that will be used
                 n_embeds.append(temp[0:min(temp.size(0), len(new_graphs_node[i]))])
@@ -318,9 +323,9 @@ class Runner:
         args = self.args
         device = self.device
         if args.with_attr:
-            g_model = Agent(args.hidden_size, args.with_attr, self.nodefeats_size).to(device)
+            g_model = Agent(args.hidden_size, args.with_attr, self.nodefeats_size, stop_bias=args.stop_bias).to(device)
         else:
-            g_model = Agent(args.hidden_size, args.with_attr).to(device)
+            g_model = Agent(args.hidden_size, args.with_attr, stop_bias=args.stop_bias).to(device)
 
         g_optimizer = optim.Adam(g_model.parameters(), lr=args.lr)
         
@@ -453,8 +458,8 @@ class Runner:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
             masked_preds = []
             for g_id, g in zip(batch_g_id, batch_g):
-                edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                edge_idx = g - self.each_g_start_nid[g_id]
+                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
                 node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                 pred = self.trained_model(node_feats, edge_idx, edge_weights)
                 masked_preds.append(pred)
@@ -470,7 +475,7 @@ class Runner:
 
         # Size loss
         if args.size_reg > 0:
-            size_loss = args.size_reg * torch.FloatTensor([g.size()[1] for g in batch_g])
+            size_loss = args.size_reg * torch.tensor([g.size()[1] for g in batch_g], dtype=torch.float32)
             size_loss = size_loss.detach().cpu().numpy()
         else:
             size_loss = np.array([0.0]*len(prediction_loss))
@@ -478,7 +483,7 @@ class Runner:
 
         # Radius Penalty
         if args.radius_penalty > 0:
-            radius_p = args.radius_penalty * torch.FloatTensor([self.graphs.subgraph_depth(x) for x in cs])
+            radius_p = args.radius_penalty * torch.tensor([self.graphs.subgraph_depth(x) for x in cs], dtype=torch.float32)
             radius_p = radius_p.detach().cpu().numpy()
         else:
             radius_p = np.array([0.0]*len(prediction_loss))
@@ -497,8 +502,8 @@ class Runner:
             else:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
-                    edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
-                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                    edge_idx = g - self.each_g_start_nid[g_id]
+                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
                     node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                     embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
@@ -629,8 +634,8 @@ class Runner:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
             masked_preds = []
             for g_id, g in zip(batch_g_id, batch_g):
-                edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                edge_idx = g - self.each_g_start_nid[g_id]
+                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
                 node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                 pred = self.trained_model(node_feats, edge_idx, edge_weights)
                 masked_preds.append(pred)
@@ -641,13 +646,60 @@ class Runner:
 
         v = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
 
-        # Size loss
+        # Size loss with target size penalty
         if args.size_reg > 0:
-            v += args.size_reg * torch.FloatTensor([g.size()[1] for g in batch_g]).to(self.device)
+            size_penalty = args.size_reg * torch.tensor([g.size()[1] for g in batch_g], dtype=torch.float32, device=self.device)
+            v += size_penalty
         
-        # Raidus penalty
+        # Target size hinge loss
+        if args.lambda_size > 0:
+            sizes = torch.tensor([len(x) for x in cs], dtype=torch.float32, device=self.device)
+            target_size = torch.tensor(args.target_size_k, dtype=torch.float32, device=self.device)
+            size_hinge = torch.clamp(sizes - target_size, min=0.0)  # Hinge loss: max(0, size - target)
+            v += args.lambda_size * size_hinge
+        
+        # Radius penalty with decay
         if args.radius_penalty > 0:
-            v += args.radius_penalty * torch.FloatTensor([self.graphs.subgraph_depth(x) for x in cs]).to(self.device)
+            radius_penalty = args.radius_penalty * torch.tensor([self.graphs.subgraph_depth(x) for x in cs], dtype=torch.float32, device=self.device)
+            v += radius_penalty
+        
+        # Adaptive radius penalty (lambda_radius with decay)
+        if args.lambda_radius > 0:
+            # Calculate current epoch for decay (assuming we have access to it)
+            current_epoch = getattr(self, 'current_epoch', 0)
+            max_epochs = getattr(self, 'max_epochs', 10)
+            
+            # Linear decay from lambda_radius to lambda_radius_min
+            decay_factor = max(0.0, 1.0 - (current_epoch / max_epochs))
+            current_lambda_radius = args.lambda_radius_min + (args.lambda_radius - args.lambda_radius_min) * decay_factor
+            
+            radius_depths = torch.tensor([self.graphs.subgraph_depth(x) for x in cs], dtype=torch.float32, device=self.device)
+            adaptive_radius_penalty = current_lambda_radius * radius_depths
+            v += adaptive_radius_penalty
+        
+        # Step cost penalty
+        if args.step_cost > 0:
+            step_costs = torch.tensor([len(x) * args.step_cost for x in cs], dtype=torch.float32, device=self.device)
+            v += step_costs
+        
+        # FIXED: Modest fidelity reward - scaled down from 5.0 to 0.05
+        # This provides gentle encouragement without overwhelming the value function
+        if args.fidelity_thresh > 0:
+            # Calculate fidelity (1 - prediction loss) for each subgraph
+            fidelity_scores = 1.0 - torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none')
+            
+            # Apply SMALL bonus for high fidelity (scaled to match regularization)
+            fidelity_bonus = torch.where(fidelity_scores >= args.fidelity_thresh, 
+                                       torch.tensor(0.05, device=self.device),  # Small bonus (was 5.0)
+                                       torch.tensor(0.0, device=self.device))
+            v -= fidelity_bonus  # Subtract because v is loss (negative reward)
+        
+        # REMOVED: EXTREME size bonuses/penalties (were causing size to max at 20)
+        # SIZE_REG alone is sufficient for size control
+        
+        # REMOVED: Diversity bonus (was conflicting with size penalties)
+        
+        # REMOVED: Oracle bonus (was 20.0 - causing value explosion)
 
         # Similarity loss
         if args.sim_reg > 0:
@@ -661,8 +713,8 @@ class Runner:
             else:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
-                    edge_idx = g.clone().to(self.device) - self.each_g_start_nid[g_id]
-                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=self.device)
+                    edge_idx = g - self.each_g_start_nid[g_id]
+                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
                     node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                     embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
@@ -671,13 +723,12 @@ class Runner:
         
         # ========== CAUSAL MECHANISM INTEGRATION ==========
         # Add causal reward if causal mechanism is enabled
-        # Temporarily disabled to debug CUDA assertion error
+        # Temporarily disable causal mechanism to debug CUDA issues
         if False and hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
             causal_rewards = []
             for i, x in enumerate(cs):
                 # Get target class for this subgraph
                 if self.task == "node_task":
-                    print(f"[CAUSAL] Debug: node_id={x[0]}, original_preds_len={len(self.original_preds)}, x={x}")
                     if 0 <= x[0] < len(self.original_preds):
                         target_y = self.original_preds[x[0]].item()
                     else:
@@ -685,7 +736,6 @@ class Runner:
                         target_y = 0
                 else:
                     g_id = self.get_g_id(x, True)
-                    print(f"[CAUSAL] Debug: g_id={g_id}, original_preds_len={len(self.original_preds)}, x={x}")
                     if 0 <= g_id < len(self.original_preds):
                         target_y = self.original_preds[g_id].item()
                     else:
@@ -759,7 +809,7 @@ class Runner:
         results = []
         for s in seeds:
             subgraph_node, _, *_ = ptgeom.utils.k_hop_subgraph(int(s), self.args.n_hop, self.graphs.edge_index)
-            results.append(list(subgraph_node.numpy()))
+            results.append(list(subgraph_node.cpu().numpy()))
         return results
 
 
@@ -784,7 +834,7 @@ class Runner:
                 for nl in range(self.args.n_hop-1, self.args.n_hop, 1):
                     subgraph_node, _, *_ = ptgeom.utils.k_hop_subgraph(int(seed_node), nl+1, self.graphs.edge_index)
                     if len(subgraph_node)>=5:
-                        self.pretrain_nodes.append(subgraph_node.numpy())
+                        self.pretrain_nodes.append(subgraph_node.cpu().numpy())
                         self.pretrain_eval_nodes.append(seed_node)
                         if len(subgraph_node)>max_size_in_sg:
                             max_size_in_sg = len(subgraph_node)
@@ -803,16 +853,16 @@ class Runner:
         pretrain_related_args = ['pretrain_list', 'pretrain_set', 'pretrain_l_iter', 'pretrain_l_sample_rate', 
                                 'hidden_size', 'dataset', 'seed', 'max_size', 'n_hop', 
                                 'l_lr', 'g_lr',  'pretrain_g_batch_size', 'with_attr', 'ds_name']
-        # Add PPO hyperparameters to hash calculation
+        # Add PPO hyperparameters to hash calculation using actual arguments
         ppo_hyperparams = {
-            'gamma': 0.99,
-            'clip_range': 0.2, 
-            'vf_clip': 0.2,
-            'ppo_epochs': 4,
-            'minibatch_size': 256,
-            'use_gae': True,
-            'gae_lambda': 0.90,
-            'reward_norm': False
+            'gamma': args.gamma,
+            'clip_range': args.clip_eps, 
+            'vf_clip': args.vf_clip,
+            'ppo_epochs': args.ppo_epochs,
+            'minibatch_size': args.minibatch_size,
+            'use_gae': args.use_gae,
+            'gae_lambda': args.gae_lambda,
+            'reward_norm': args.reward_norm
         }
         for key, value in ppo_hyperparams.items():
             arg_dict[key] = value
@@ -1065,6 +1115,14 @@ if __name__ == '__main__':
                        help='How to aggregate node scores to edge scores')
     parser.add_argument('--debug_eval_graph', type=int, default=-1,
                        help='Graph ID to run debug evaluation on (-1 to disable)')
+    
+    # Additional PPO parameters for pretraining hash
+    parser.add_argument('--vf_clip', type=float, default=0.2,
+                       help='Value function clipping parameter')
+    parser.add_argument('--use_gae', action='store_true', default=True,
+                       help='Use Generalized Advantage Estimation')
+    parser.add_argument('--reward_norm', action='store_true', default=False,
+                       help='Enable reward normalization')
 
     args = parser.parse_args()
     

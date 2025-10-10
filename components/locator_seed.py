@@ -140,26 +140,53 @@ class Locator:
             if not hasattr(self, "old_logps") or self.old_logps is None:
                 self.old_logps = logps.detach()
 
-            # value baseline
+            # PPO parameters - use instance variables instead of hardcoded values
+            ppo_clip = getattr(self, 'ppo_clip', 0.2)  # Default to 0.2 if not set
+            gamma = getattr(self, 'gamma', 0.99)  # Default to 0.99 if not set
+            gae_lambda = getattr(self, 'gae_lambda', 0.95)  # Default to 0.95 if not set
 
-            advantages = (rewards - self.values.detach()) * mask
+            # GAE (Generalized Advantage Estimation) implementation
+            # Compute returns and advantages using GAE
+            returns = torch.zeros_like(rewards)
+            advantages = torch.zeros_like(rewards)
+            
+            # Compute returns using GAE
+            for t in reversed(range(rewards.size(1))):
+                if t == rewards.size(1) - 1:
+                    next_value = torch.zeros_like(self.values[:, t])
+                else:
+                    next_value = self.values[:, t + 1]
+                
+                delta = rewards[:, t] + gamma * next_value - self.values[:, t]
+                if t == rewards.size(1) - 1:
+                    gae = delta
+                else:
+                    gae = delta + gamma * gae_lambda * advantages[:, t + 1]
+                advantages[:, t] = gae
+                returns[:, t] = advantages[:, t] + self.values[:, t]
+            
+            # Apply mask to advantages and returns
+            advantages = advantages * mask
+            returns = returns * mask
+            
+            # Normalize advantages
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
             # PPO ratio & surrogate loss
             ratios = torch.exp(logps - self.old_logps.detach())
-            eps = 0.2
             surr1 = ratios * advantages
-            surr2 = torch.clamp(ratios, 1 - eps, 1 + eps) * advantages
+            surr2 = torch.clamp(ratios, 1 - ppo_clip, 1 + ppo_clip) * advantages
             policy_loss = -(torch.min(surr1, surr2) * mask).sum() / mask.sum()
 
-            # value loss
-            value_loss = ((self.values - rewards) ** 2 * mask).sum() / mask.sum()
+            # Value loss with clipping (simplified without old values for now)
+            value_loss = ((self.values - returns) ** 2 * mask).sum() / mask.sum()
 
-            # # entropy 
-            # entropy_loss = -(logps * torch.exp(logps) * mask).sum() / mask.sum()
+            # Entropy bonus
+            entropy_loss = -(logps * torch.exp(logps) * mask).sum() / mask.sum()
 
-            # total loss 
-            loss = policy_loss + 0.5 * value_loss - self.entropy_coef
+            # total loss - FIXED: Reduced value loss coefficient from 0.5 to 0.25
+            # This prevents value loss from dominating when returns are large
+            loss = policy_loss + 0.25 * value_loss - self.entropy_coef * entropy_loss
             loss.backward()
             self.optimizer.step()
 

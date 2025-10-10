@@ -43,11 +43,12 @@ class GraphConv:
 
 class Agent(nn.Module):
 
-    def __init__(self, hidden_size, with_attr=False, attr_size=-1, norm_type=None):
+    def __init__(self, hidden_size, with_attr=False, attr_size=-1, norm_type=None, stop_bias=0.0):
         super().__init__()
         self.hidden_size = hidden_size
         self.with_attr = with_attr
         self.attr_size = attr_size
+        self.stop_bias = stop_bias
         if with_attr:
             self.attr_embedding = nn.Linear(attr_size, hidden_size)
         self.seed_embedding = nn.Linear(1, hidden_size, bias=False)
@@ -64,7 +65,9 @@ class Agent(nn.Module):
         nn.init.zeros_(self.value_layer.weight.data)
         nn.init.zeros_(self.node_score_layer.weight.data)
         nn.init.zeros_(self.stopping_score_layer.weight.data)
-        # nn.init.constant_(self.stopping_score_layer.weight.data[0], 1.)
+        # Initialize STOP bias
+        if stop_bias != 0.0:
+            nn.init.constant_(self.stopping_score_layer.weight.data[1], stop_bias)  # STOP action bias
 
     def forward(self, x_attrs, x_seeds, x_nodes, indptr):
         # x_attrs: [n, d]

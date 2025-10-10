@@ -97,7 +97,6 @@ class Generator:
                  max_reward: float = 1.,
                  ppo_epochs: int = 4,
                  minibatch_size: int = 256,
-                 clip_eps: float = 0.2,
                  target_kl: float = 0.03,
                  grad_clip: float = 1.0,
                  gae_lambda: float = 0.95,
@@ -144,7 +143,6 @@ class Generator:
         # PPO parameters
         self.ppo_epochs = ppo_epochs
         self.minibatch_size = minibatch_size
-        self.clip_eps = clip_eps
         self.target_kl = target_kl
         self.grad_clip = grad_clip
         self.gae_lambda = gae_lambda
@@ -168,6 +166,7 @@ class Generator:
         # PPO stability parameters
         self.clip_range = ppo_clip
         self.vf_clip = ppo_clip if use_value_clip else None
+        # Remove redundant clip_eps parameter - use ppo_clip consistently
         self.gamma = gamma
         self.use_gae = True
         self.reward_norm = False
@@ -376,6 +375,14 @@ class Generator:
         # compute reward matrix
         rewards = np.zeros(logps.shape, dtype=np.float32)
         final_scores = fn(selected_nodes)
+        
+        # FIXED: Add reward normalization to prevent explosion
+        # This stabilizes training by keeping rewards in a reasonable range
+        if len(final_scores) > 1:
+            final_scores_mean = np.mean(final_scores)
+            final_scores_std = np.std(final_scores) + 1e-8
+            final_scores = (final_scores - final_scores_mean) / final_scores_std
+        
         rewards[np.arange(logps.size(0)), lengths.cpu().numpy() - 2] = final_scores
         
         # Apply frontier shaping to terminal rewards
@@ -584,13 +591,13 @@ class Generator:
                     ratios = torch.exp(current_logps - old_logps_batch)
                     
                     # PPO surrogate loss
-                    eps = self.clip_eps
+                    eps = self.clip_range  # Use ppo_clip consistently
                     surr1 = ratios * advantages
                     surr2 = torch.clamp(ratios, 1 - eps, 1 + eps) * advantages
                     policy_loss = -torch.min(surr1, surr2).mean()
                     
                     # Value loss with clipping
-                    vf_clip = self.clip_eps
+                    vf_clip = self.clip_range  # Use ppo_clip consistently
                     value_pred_clipped = old_values_batch + torch.clamp(
                         current_values - old_values_batch, -vf_clip, vf_clip
                     )
@@ -601,8 +608,9 @@ class Generator:
                     # Entropy bonus (positive entropy encourages exploration)
                     entropy_bonus = current_entropys.mean()
                     
-                    # Total loss
-                    loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy_bonus
+                    # Total loss - FIXED: Reduced value loss coefficient from 0.5 to 0.25
+                    # This prevents value loss from dominating when returns are large
+                    loss = policy_loss + 0.25 * value_loss - self.entropy_coef * entropy_bonus
                     loss.backward()
                     
                     # Gradient clipping
@@ -879,8 +887,11 @@ class Generator:
                 # Compute causal importance for current state
                 causal_bias = self._compute_causal_bias(valid_index, env.trajectories, batch_candidates)
             
-            # Action sampling with optional causal bias
-            actions, logps, entropys = self._sample_actions(batch_logits, causal_bias)
+            # Track current trajectory lengths for minimum steps guard
+            self._current_trajectory_lengths = [len(traj) for traj in env.trajectories]
+            
+            # Action sampling with optional causal bias and minimum steps guard
+            actions, logps, entropys = self._sample_actions(batch_logits, causal_bias, min_steps_before_stop=3)
             
             # Handle EOS head model - action < len(candidates) selects candidate, action == len(candidates) is EOS
             new_nodes = []
@@ -1023,13 +1034,14 @@ class Generator:
         
         return causal_bias
 
-    def _sample_actions(self, batch_logits: List, causal_bias: Optional[List] = None) -> (List, List, List):
+    def _sample_actions(self, batch_logits: List, causal_bias: Optional[List] = None, min_steps_before_stop: int = 3) -> (List, List, List):
         """
-        Sample actions with optional causal bias.
+        Sample actions with optional causal bias and minimum steps before STOP.
         
         Args:
             batch_logits: List of logits for each batch element
             causal_bias: Optional list of causal importance scores to bias action selection
+            min_steps_before_stop: Minimum number of steps before STOP action is allowed
             
         Returns:
             actions: Selected action indices
@@ -1048,6 +1060,14 @@ class Generator:
                 # Combine original logits with causal bias
                 biased_logits = logits + 0.1 * causal_logits  # Weight the causal bias
                 ps = torch.exp(biased_logits)
+                ps = ps / ps.sum()  # Renormalize
+            
+            # MINIMUM STEPS GUARD: Prevent STOP action for first few steps
+            # Get current trajectory length (assuming we can access it from the environment)
+            current_length = getattr(self, '_current_trajectory_lengths', [1] * len(batch_logits))[i]
+            if current_length < min_steps_before_stop:
+                # Set STOP action probability to 0 (last action in logits)
+                ps[-1] = 0.0
                 ps = ps / ps.sum()  # Renormalize
             
             entropy = -(ps * torch.log(ps + 1e-8)).sum()

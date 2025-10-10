@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-9
+#SBATCH --array=0-0
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -64,11 +64,31 @@ SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn3"
 POLICY="PPO"
 N_EPOCHS=30
-SIZE_REG=0.01
-SIM_REG=1.0
-RADIUS_PENALTY=0.1
+
+# Regularization - MINIMAL to focus on fidelity
+SIZE_REG=0.0001      # Reduced 100x: was 0.01 (too aggressive)
+SIM_REG=0.001        # Reduced 1000x: was 1.0 (causing high value loss)
+RADIUS_PENALTY=0.01  # Reduced 10x: was 0.1 (too high)
+
+# Learning rate - Higher for value function learning
+LR=0.0003            # Increased 3x: was 0.0001 default (value function needs faster learning)
+
+# Causal mechanism - Reduced weight and faster warmup
+CAUSAL_WEIGHT=0.2    # Reduced from 0.5 (too much noise)
+CAUSAL_WARMUP=10     # Increased from 5 (slower warmup)
+
+# Size targets - Remove conflicting penalties
+LAMBDA_SIZE=0.0      # Disable hinge loss (conflicts with SIZE_REG)
+LAMBDA_RADIUS=0.0    # Disable adaptive radius (use RADIUS_PENALTY only)
+STEP_COST=0.0        # Disable step cost (conflicts with SIZE_REG)
+
+# Fidelity threshold - DISABLE artificial bonuses
+FIDELITY_THRESH=0.0  # Disable EXTREME bonuses (causing value explosion)
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
+
+# Clean the result file before starting
+> "$RESULT_FILE"
 
 echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
 
@@ -101,9 +121,16 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --seed "${SEED}" \
     --policy "${POLICY}" \
     --n_epochs "${N_EPOCHS}" \
+    --lr "${LR}" \
     --size_reg "${SIZE_REG}" \
     --sim_reg "${SIM_REG}" \
     --radius_penalty "${RADIUS_PENALTY}" \
+    --causal_weight "${CAUSAL_WEIGHT}" \
+    --causal_warmup_epochs "${CAUSAL_WARMUP}" \
+    --lambda_size "${LAMBDA_SIZE}" \
+    --lambda_radius "${LAMBDA_RADIUS}" \
+    --step_cost "${STEP_COST}" \
+    --fidelity_thresh "${FIDELITY_THRESH}" \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"
