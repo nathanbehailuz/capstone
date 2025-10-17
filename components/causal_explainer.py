@@ -100,24 +100,26 @@ class NodeLevelCausalExplainer(nn.Module):
         
         # Counterfactual: Node representations with ONLY selected edges
         if len(torch.where(state == True)[0]) == 0 or ocp_edge_index.size(1) == 0:
-            # No edges selected yet - zero representation
-            # OR: Empty edge index (isolated nodes) - zero representation
             ava_node_reps_1 = torch.zeros_like(ava_node_reps_0)
         else:
-            # CRITICAL: Check if ocp_edge_index has edges before calling GNN
-            # GCNConv cannot handle empty edge_index (causes shape mismatch)
-            try:
-                with torch.no_grad():
-                    ava_node_reps_1 = self.model.get_node_reps(
-                        graph.x,          # Same node features
-                        ocp_edge_index,   # ONLY selected edges (counterfactual)
-                        ocp_edge_attr,    # Only selected edge features
-                        graph.batch if hasattr(graph, 'batch') else None
-                    )  # Shape: [num_nodes, hidden_dim]
-            except RuntimeError as e:
-                # If GNN fails (e.g., shape mismatch), use zero representation
-                print(f"[CAUSAL] Warning: GNN forward failed for counterfactual, using zero representation")
+            # Add explicit edge count check
+            if ocp_edge_index.size(1) < 1:
+                print(f"[CAUSAL] Warning: Only {ocp_edge_index.size(1)} edges in counterfactual", flush=True)
                 ava_node_reps_1 = torch.zeros_like(ava_node_reps_0)
+            else:
+                try:
+                    with torch.no_grad():
+                        ava_node_reps_1 = self.model.get_node_reps(
+                            graph.x,
+                            ocp_edge_index,
+                            ocp_edge_attr,
+                            graph.batch if hasattr(graph, 'batch') else None
+                        )
+                except (RuntimeError, IndexError) as e:
+                    # More specific error logging
+                    print(f"[CAUSAL] ERROR in get_node_reps: {type(e).__name__}: {str(e)}", flush=True)
+                    print(f"[CAUSAL] Edge index shape: {ocp_edge_index.shape}, num_nodes: {graph.x.size(0)}", flush=True)
+                    ava_node_reps_1 = torch.zeros_like(ava_node_reps_0)
         
         # ========== STEP 4: CAUSAL EFFECT - Compute the Difference ==========
         

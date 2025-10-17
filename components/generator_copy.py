@@ -1021,7 +1021,17 @@ class Generator:
             causal_bias = None
             if self.use_causal and self.causal_explainer is not None and self.gnn_model is not None:
                 # Get node features as tensor
-                node_feats_tensor = torch.from_numpy(self.nodefeats).float().to(self.device) if not torch.is_tensor(self.nodefeats) else self.nodefeats
+                # Ensure node features are on correct device
+                if torch.is_tensor(self.nodefeats):
+                    node_feats_tensor = self.nodefeats.to(self.device)
+                else:
+                    node_feats_tensor = torch.from_numpy(self.nodefeats).float().to(self.device)
+
+                # Add device assertions for safety (after node_feats_tensor creation)
+                assert node_feats_tensor.device == self.device, \
+                    f"Node features on wrong device: {node_feats_tensor.device} vs {self.device}"
+                assert self.full_edge_index.device == self.device, \
+                    f"Edge index on wrong device: {self.full_edge_index.device} vs {self.device}"
                 
                 # Compute causal importance for current state
                 with torch.no_grad():
@@ -1227,16 +1237,16 @@ class Generator:
     def _make_subgraph_mask(self, nodes: List[int], full_edge_index: torch.Tensor):
         """
         Create subgraph edge mask for nodes (treatment/control intervention).
-        
-        Args:
-            nodes: List of nodes to include in subgraph
-            full_edge_index: Full graph edge index [2, num_edges]
-            
-        Returns:
-            edge_mask: Boolean tensor indicating edges within the subgraph
-            subgraph_edge_index: Edge index containing only subgraph edges
         """
         node_set = set(nodes)
+        
+        # Validate nodes are within bounds
+        max_node_id = full_edge_index.max().item() if full_edge_index.size(1) > 0 else -1
+        invalid_nodes = [n for n in nodes if n > max_node_id or n < 0]
+        if invalid_nodes:
+            print(f"[CAUSAL] Warning: Invalid node IDs {invalid_nodes}, max allowed: {max_node_id}", flush=True)
+            # Filter out invalid nodes
+            node_set = set(n for n in nodes if 0 <= n <= max_node_id)
         
         # Find edges where both endpoints are in the node set
         src, dst = full_edge_index[0], full_edge_index[1]
@@ -1285,114 +1295,119 @@ class Generator:
         gnn_model.eval()
         
         causal_bias = []
-        
-        for idx, (i, candidates) in enumerate(zip(valid_index, batch_candidates)):
-            try:
-                current_nodes = trajectories[i]
-                # Map expanded batch index (from rollouts) back to original seed index
-                original_idx = i % len(seed_nodes)
-                seed_node = seed_nodes[original_idx]
-                target_class = target_classes[original_idx].item() if torch.is_tensor(target_classes[original_idx]) else target_classes[original_idx]
-                
-                if len(candidates) == 0:
-                    # No candidates - only STOP action available
-                    causal_bias.append(torch.ones(1, dtype=torch.float32, device=self.device))
-                    continue
-                
-                # Validate current_nodes is not empty
-                if len(current_nodes) == 0:
-                    # Empty trajectory - return uniform bias
-                    causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
-                    continue
-                
-                # ========== CONTROL: G_{k-1} ==========
-                _, ctrl_edge_index = self._make_subgraph_mask(current_nodes, full_edge_index)
-                
-                # Skip if seed node is not in current nodes (shouldn't happen but be safe)
-                if seed_node not in current_nodes:
-                    causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
-                    continue
-                
-                # CRITICAL FIX: If subgraph has no edges, skip causal computation
-                # GCNConv cannot handle empty edge_index properly - it causes shape mismatch
-                if ctrl_edge_index.size(1) == 0:
-                    # No edges in subgraph - causal mechanism not applicable
-                    # Fall back to uniform bias
-                    causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
-                    continue
-                
-                # Forward pass for control - use FULL node features, restricted edges
-                edge_weights = torch.ones(ctrl_edge_index.size(1), device=ctrl_edge_index.device)
-                ctrl_logits = gnn_model(node_features, ctrl_edge_index, edge_weights)
-                
-                # For node classification, get prediction for seed node only
-                if ctrl_logits.dim() > 1 and ctrl_logits.size(0) > seed_node:
-                    ctrl_logits = ctrl_logits[seed_node].unsqueeze(0)
-                elif ctrl_logits.dim() == 1:
-                    ctrl_logits = ctrl_logits.unsqueeze(0)
-                
-                ctrl_logp = torch.log_softmax(ctrl_logits, dim=-1).squeeze()
-                ctrl_ce = -ctrl_logp[target_class]
-                
-                # ========== TREATMENT: G_{k-1} ∪ {a_k} for each candidate ==========
-                ice_scores = []
-                
-                for cand in candidates:
-                    treatment_nodes = current_nodes + [cand]
-                    _, treat_edge_index = self._make_subgraph_mask(treatment_nodes, full_edge_index)
+
+        # WRAP EVERYTHING in no_grad to prevent memory issues
+        with torch.no_grad():
+            for idx, (i, candidates) in enumerate(zip(valid_index, batch_candidates)):
+                try:
+                    current_nodes = trajectories[i]
+                    # Replace the seed node lookup with:
+                    seed_node = trajectories[i][0]  # First node in trajectory is always the seed
+
+                    # Then validate it's in the expected range
+                    if seed_node >= len(target_classes):
+                        print(f"[CAUSAL] Warning: seed_node {seed_node} out of bounds (target_classes len={len(target_classes)})", flush=True)
+                        causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                        continue
+
+                    target_class = target_classes[seed_node].item() if torch.is_tensor(target_classes[seed_node]) else target_classes[seed_node]
                     
-                    # Skip treatment if it has no edges (same issue as control)
-                    if treat_edge_index.size(1) == 0:
-                        # No edges means adding this candidate doesn't create connectivity
-                        # Penalize this action (isolated node)
-                        ice_scores.append(-5.0)
+                    if len(candidates) == 0:
+                        # No candidates - only STOP action available
+                        causal_bias.append(torch.ones(1, dtype=torch.float32, device=self.device))
                         continue
                     
-                    # Forward pass for treatment - use FULL node features, restricted edges
-                    edge_weights = torch.ones(treat_edge_index.size(1), device=treat_edge_index.device)
-                    treat_logits = gnn_model(node_features, treat_edge_index, edge_weights)
+                    # Validate current_nodes is not empty
+                    if len(current_nodes) == 0:
+                        # Empty trajectory - return uniform bias
+                        causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                        continue
+                    
+                    # ========== CONTROL: G_{k-1} ==========
+                    _, ctrl_edge_index = self._make_subgraph_mask(current_nodes, full_edge_index)
+                    
+                    # Skip if seed node is not in current nodes (shouldn't happen but be safe)
+                    if seed_node not in current_nodes:
+                        causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                        continue
+                    
+                    # After creating ctrl_edge_index, add this check:
+                    if ctrl_edge_index.size(1) == 0:
+                        print(f"[CAUSAL] Warning: Empty control subgraph for trajectory {i}, seed {seed_node}", flush=True)
+                        print(f"[CAUSAL]   Current nodes: {current_nodes}", flush=True)
+                        print(f"[CAUSAL]   Falling back to uniform bias", flush=True)
+                        causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                        continue
+                    
+                    # Forward pass for control - use FULL node features, restricted edges
+                    edge_weights = torch.ones(ctrl_edge_index.size(1), device=ctrl_edge_index.device)
+                    ctrl_logits = gnn_model(node_features, ctrl_edge_index, edge_weights)
                     
                     # For node classification, get prediction for seed node only
-                    if treat_logits.dim() > 1 and treat_logits.size(0) > seed_node:
-                        treat_logits = treat_logits[seed_node].unsqueeze(0)
-                    elif treat_logits.dim() == 1:
-                        treat_logits = treat_logits.unsqueeze(0)
+                    if ctrl_logits.dim() > 1 and ctrl_logits.size(0) > seed_node:
+                        ctrl_logits = ctrl_logits[seed_node].unsqueeze(0)
+                    elif ctrl_logits.dim() == 1:
+                        ctrl_logits = ctrl_logits.unsqueeze(0)
                     
-                    treat_logp = torch.log_softmax(treat_logits, dim=-1).squeeze()
-                    treat_ce = -treat_logp[target_class]
+                    ctrl_logp = torch.log_softmax(ctrl_logits, dim=-1).squeeze()
+                    ctrl_ce = -ctrl_logp[target_class]
                     
-                    # Compute ICE score
-                    if ce_mode:
-                        ice = ctrl_ce - treat_ce  # Positive means treatment improves prediction
-                    else:
-                        ice = treat_logp[target_class] - ctrl_logp[target_class]
+                    # ========== TREATMENT: G_{k-1} ∪ {a_k} for each candidate ==========
+                    ice_scores = []
                     
-                    # Add correctness bonus/penalty
-                    pred_class = treat_logits.argmax(dim=-1).item() if treat_logits.dim() > 1 else treat_logits.argmax().item()
-                    bonus = gamma if pred_class == target_class else -gamma
-                    
-                    total_score = ice + bonus
-                    ice_scores.append(total_score.item())
-            
-                # Convert to tensor and add neutral score for STOP action
-                ice_tensor = torch.tensor(ice_scores + [0.0], dtype=torch.float32, device=self.device)
+                    for cand in candidates:
+                        treatment_nodes = current_nodes + [cand]
+                        _, treat_edge_index = self._make_subgraph_mask(treatment_nodes, full_edge_index)
+                        
+                        # Skip treatment if it has no edges (same issue as control)
+                        if treat_edge_index.size(1) == 0:
+                            # No edges means adding this candidate doesn't create connectivity
+                            # Penalize this action (isolated node)
+                            ice_scores.append(-5.0)
+                            continue
+                        
+                        # Forward pass for treatment - use FULL node features, restricted edges
+                        edge_weights = torch.ones(treat_edge_index.size(1), device=treat_edge_index.device)
+                        treat_logits = gnn_model(node_features, treat_edge_index, edge_weights)
+                        
+                        # For node classification, get prediction for seed node only
+                        if treat_logits.dim() > 1 and treat_logits.size(0) > seed_node:
+                            treat_logits = treat_logits[seed_node].unsqueeze(0)
+                        elif treat_logits.dim() == 1:
+                            treat_logits = treat_logits.unsqueeze(0)
+                        
+                        treat_logp = torch.log_softmax(treat_logits, dim=-1).squeeze()
+                        treat_ce = -treat_logp[target_class]
+                        
+                        # Compute ICE score
+                        if ce_mode:
+                            ice = ctrl_ce - treat_ce  # Positive means treatment improves prediction
+                        else:
+                            ice = treat_logp[target_class] - ctrl_logp[target_class]
+                        
+                        # Add correctness bonus/penalty
+                        pred_class = treat_logits.argmax(dim=-1).item() if treat_logits.dim() > 1 else treat_logits.argmax().item()
+                        bonus = gamma if pred_class == target_class else -gamma
+                        
+                        total_score = ice + bonus
+                        ice_scores.append(total_score.item())
                 
-                # Normalize to avoid extreme values
-                ice_tensor = torch.tanh(ice_tensor)  # Squash to [-1, 1]
-                
-                causal_bias.append(ice_tensor)
-                
-            except Exception as e:
-                # If causal computation fails, fall back to uniform bias
-                import traceback
-                print(f"[CAUSAL] Warning: Failed to compute causal bias for trajectory {i}")
-                print(f"[CAUSAL] Error: {str(e)}")
-                print(f"[CAUSAL] Current nodes: {current_nodes}")
-                print(f"[CAUSAL] Seed node: {seed_node}")
-                print(f"[CAUSAL] Candidates: {candidates}")
-                if self.debug_mode:
-                    traceback.print_exc()
-                causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                    # Convert to tensor and add neutral score for STOP action
+                    ice_tensor = torch.tensor(ice_scores + [0.0], dtype=torch.float32, device=self.device)
+                    
+                    # Normalize to avoid extreme values
+                    ice_tensor = torch.tanh(ice_tensor)  # Squash to [-1, 1]
+                    
+                    causal_bias.append(ice_tensor)
+                    
+                except Exception as e:
+                    # Enhanced error handling
+                    if self.debug_mode:
+                        import traceback
+                        print(f"[CAUSAL] Full error traceback:", flush=True)
+                        traceback.print_exc()
+                    # Fallback to uniform bias
+                    causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
         
         return causal_bias
 
