@@ -184,9 +184,9 @@ class Locator:
             # Entropy bonus
             entropy_loss = -(logps * torch.exp(logps) * mask).sum() / mask.sum()
 
-            # total loss - FIXED: Reduced value loss coefficient from 0.5 to 0.25
+            # total loss - FIXED: Further reduced value loss coefficient from 0.25 to 0.1
             # This prevents value loss from dominating when returns are large
-            loss = policy_loss + 0.25 * value_loss - self.entropy_coef * entropy_loss
+            loss = policy_loss + 0.1 * value_loss - self.entropy_coef * entropy_loss
             loss.backward()
             self.optimizer.step()
 

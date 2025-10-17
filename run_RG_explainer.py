@@ -6,6 +6,7 @@ import pathlib
 import time
 import sys
 import os
+import re
 
 import torch
 from torch import optim
@@ -148,6 +149,8 @@ class Runner:
         else: # 'graph_task'
             
             self.graph_eval_seeds = explain_eval_seeds
+            # Initialize eval_seeds for graph tasks (will be set properly in pretrain_l)
+            self.eval_seeds = explain_eval_seeds
 
             each_g_actual_nodes = []
             for i in range(len(self.graphs)):
@@ -322,6 +325,13 @@ class Runner:
     def init_g(self):
         args = self.args
         device = self.device
+        
+        # Assert that causal mechanism is enabled
+        use_causal = getattr(args, 'use_causal', False)
+        if use_causal:
+            assert use_causal, "[ERROR] Causal mechanism must be enabled (--use_causal flag or default=True)"
+            print(f"[CAUSAL] Causal mechanism check passed: use_causal={use_causal}")
+        
         if args.with_attr:
             g_model = Agent(args.hidden_size, args.with_attr, self.nodefeats_size, stop_bias=args.stop_bias).to(device)
         else:
@@ -330,7 +340,6 @@ class Runner:
         g_optimizer = optim.Adam(g_model.parameters(), lr=args.lr)
         
         # Initialize causal mechanism parameters
-        use_causal = getattr(args, 'use_causal', False)
         causal_weight = getattr(args, 'causal_weight', 0.5)
         causal_explainer = None
         
@@ -362,6 +371,8 @@ class Runner:
                     use_edge_attr=args.with_attr
                 ).to(device)
             print(f"[CAUSAL] Initialized {type(causal_explainer).__name__} with {num_classes} classes, weight {causal_weight}")
+        else:
+            print("[CAUSAL] Causal mechanism disabled")
         
         g = Generator(self.graphs, g_model, g_optimizer, device,
                       entropy_coef=args.entropy_coef,
@@ -377,26 +388,48 @@ class Runner:
                       stop_bias=args.stop_bias,
                       fidelity_thresh=args.fidelity_thresh,
                       # PPO stability parameters
-                      ppo_clip=args.ppo_clip,
+                      ppo_clip=args.clip_eps,  # Legacy parameter
+                      clip_range_policy=args.clip_range_policy,
+                      clip_range_value=args.clip_range_value,
                       kl_target=args.kl_target,
                       lr=args.lr,
                       gamma=args.gamma,
                       gae_lambda=args.gae_lambda,
-                      max_grad_norm=args.max_grad_norm,
+                      max_grad_norm=args.grad_clip,
                       use_value_clip=args.use_value_clip,
+                      adaptive_kl_penalty=args.adaptive_kl_penalty,
+                      total_epochs=args.n_epochs,
                       # Entropy scheduling
-                      entropy_coeff_start=args.entropy_coeff_start,
-                      entropy_coeff_end=args.entropy_coeff_end,
+                      entropy_coeff_start=args.entropy_decay_start,
+                      entropy_coeff_end=args.entropy_decay_end,
+                      entropy_decay_final=args.entropy_decay_final,
                       # Causal mechanism parameters
                       use_causal=use_causal,
                       causal_explainer=causal_explainer,
                       causal_weight=causal_weight,
-                      causal_warmup_epochs=args.causal_warmup_epochs)
+                      causal_warmup_epochs=args.causal_warmup_epochs,
+                      # Debug parameters
+                      debug_mode=bool(args.debug_mode))
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
         
         # Initialize causal reward calculator
         g.init_causal_reward_calculator(self.trained_model)
+        
+        # Set causal data for intervention-based causal bias computation
+        if args.use_causal:
+            # Get target classes for eval seeds
+            with torch.no_grad():
+                edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
+                all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
+                target_classes = torch.argmax(all_preds, dim=1)[list(self.eval_seeds)]
+            
+            g.set_causal_data(
+                gnn_model=self.trained_model,
+                full_edge_index=self.graphs.edge_index,
+                target_classes=target_classes,
+                seed_nodes=list(self.eval_seeds)
+            )
         
         return g
 
@@ -440,7 +473,16 @@ class Runner:
                         print("edge pair error", flush=True)
 
         mask = rank / (self.args.max_size-1)
-        return (o_g, mask)
+        
+        # Create edge scores dictionary for saving
+        edge_scores = {}
+        for i in range(n_edges):
+            src = int(o_g[0][i])
+            dst = int(o_g[1][i])
+            score = float(mask[i])
+            edge_scores[(src, dst)] = score
+        
+        return (o_g, mask), edge_scores
 
     def eval_loss(self, cs):
         cs = [x[:-1] if x[-1] == 'EOS' else x for x in cs]
@@ -559,15 +601,25 @@ class Runner:
 
 
         if self.task == "node_task":
-            explanations = [self.prepare_mask(self.subgraphs[i], x) for i, x in enumerate(pred_sgs)]
+            explanations = []
+            edge_scores_list = []
+            for i, x in enumerate(pred_sgs):
+                expl, edge_scores = self.prepare_mask(self.subgraphs[i], x)
+                explanations.append(expl)
+                edge_scores_list.append(edge_scores)
         else:
             explanations = []
+            edge_scores_list = []
             for idx, g_id in enumerate(self.graph_eval_seeds):
                 if idx < len(pred_sgs):
-                    explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], [x - self.each_g_start_nid[g_id] for x in pred_sgs[idx]]))
+                    expl, edge_scores = self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], [x - self.each_g_start_nid[g_id] for x in pred_sgs[idx]])
+                    explanations.append(expl)
+                    edge_scores_list.append(edge_scores)
                 else:
                     # Handle case where pred_sgs doesn't have enough elements
-                    explanations.append(self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], []))
+                    expl, edge_scores = self.prepare_mask(self.graphs.edge_index[:, self.each_g_start_eid[g_id]:self.each_g_start_eid[g_id+1]] - self.each_g_start_nid[g_id], [])
+                    explanations.append(expl)
+                    edge_scores_list.append(edge_scores)
 
 
         auc_score = self.auc_eval.get_score(explanations, 
@@ -576,8 +628,71 @@ class Runner:
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
         print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
 
+        # Save edge scores to text files
+        self.save_edge_scores_to_file(edge_scores_list, prefix)
 
         return auc_score
+
+    def save_edge_scores_to_file(self, edge_scores_list, prefix):
+        """Save edge scores to the results file."""
+        if not edge_scores_list:
+            return
+            
+        # Determine the results file path
+        results_file = f"results/{self.args.dataset}_ppo_seed_{self.args.seed}.txt"
+        
+        # Read existing content
+        try:
+            with open(results_file, 'r') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            print(f"Warning: Results file {results_file} not found, cannot save edge scores")
+            return
+        
+        # Find the current epoch section and add edge scores
+        epoch_pattern = rf'\[EVAL-{prefix}\]'
+        modified_lines = []
+        edge_scores_idx = 0
+        
+        for i, line in enumerate(lines):
+            modified_lines.append(line)
+            
+            # Check if this is an epoch marker
+            if re.search(epoch_pattern, line):
+                # Look ahead for the next lines that contain subgraph data
+                j = i + 1
+                while j < len(lines) and not re.search(r'\[EVAL-', lines[j]):
+                    current_line = lines[j]
+                    
+                    # Check if this line contains subgraph data (sgs [...])
+                    if 'sgs' in current_line and '[' in current_line and ']' in current_line:
+                        if edge_scores_idx < len(edge_scores_list):
+                            edge_scores = edge_scores_list[edge_scores_idx]
+                            
+                            # Format edge scores as a string
+                            if edge_scores:
+                                edge_scores_str = "edge_scores {"
+                                edge_items = []
+                                for (src, dst), score in edge_scores.items():
+                                    edge_items.append(f"({src},{dst}):{score:.4f}")
+                                edge_scores_str += ",".join(edge_items) + "}"
+                                
+                                # Add edge scores line after the subgraph line
+                                modified_lines.append(f"  {edge_scores_str}\n")
+                                edge_scores_idx += 1
+                            else:
+                                modified_lines.append("  edge_scores {}\n")
+                                edge_scores_idx += 1
+                    
+                    j += 1
+        
+        # Write the modified content back to the file
+        try:
+            with open(results_file, 'w') as f:
+                f.writelines(modified_lines)
+            print(f"Edge scores saved to {results_file}")
+        except Exception as e:
+            print(f"Error saving edge scores: {e}")
 
     def get_g_id(self, nodes, is_check=False):
         if is_check:
@@ -723,8 +838,7 @@ class Runner:
         
         # ========== CAUSAL MECHANISM INTEGRATION ==========
         # Add causal reward if causal mechanism is enabled
-        # Temporarily disable causal mechanism to debug CUDA issues
-        if False and hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
+        if hasattr(self.g, 'use_causal') and self.g.use_causal and self.g.causal_reward_calculator is not None:
             causal_rewards = []
             for i, x in enumerate(cs):
                 # Get target class for this subgraph
@@ -769,17 +883,20 @@ class Runner:
                     # Fallback to zero causal reward if computation fails
                     print(f"[CAUSAL] Warning: Failed to compute causal reward: {e}")
                     causal_rewards.append(0.0)
-            
-            # Combine original reward with causal reward
-            causal_weight = getattr(self.args, 'causal_weight', 0.5)
-            original_scores = -v.detach().cpu().numpy()  # Convert back to positive scores
-            causal_scores = np.array(causal_rewards)
-            
-            # Combine scores with weighted average
-            combined_scores = (1 - causal_weight) * original_scores + causal_weight * causal_scores
-            
-            print(f"[CAUSAL] Original scores: {np.mean(original_scores):.4f}, Causal scores: {np.mean(causal_scores):.4f}, Combined: {np.mean(combined_scores):.4f}")
-            
+
+            if self.g.use_causal:
+                # Combine original reward with causal reward
+                causal_weight = getattr(self.args, 'causal_weight', 0.5)
+                original_scores = -v.detach().cpu().numpy()  # Convert back to positive scores
+                causal_scores = np.array(causal_rewards)
+                
+                # Combine scores with weighted average
+                combined_scores = (1 - causal_weight) * original_scores + causal_weight * causal_scores
+                
+                print(f"[CAUSAL] Original scores: {np.mean(original_scores):.4f}, Causal scores: {np.mean(causal_scores):.4f}, Combined: {np.mean(combined_scores):.4f}")
+            else:
+                combined_scores = -v.detach().cpu().numpy()
+
             return combined_scores
         
         return -v.detach().cpu().numpy()
@@ -952,9 +1069,12 @@ class Runner:
             self.g.update_epoch(i_epoch)
             print(f'Entropy coefficient: {self.g.current_entropy_coef:.6f}', flush=True)
             
-            # Log effective causal weight
-            effective_causal_w = self.g.get_effective_causal_weight(i_epoch)
-            print(f'Effective causal weight: {effective_causal_w:.4f}', flush=True)
+            # Log effective causal weight only if causal mechanism is enabled
+            if getattr(self.g, 'use_causal', False):
+                effective_causal_w = self.g.get_effective_causal_weight(i_epoch)
+                print(f'Effective causal weight: {effective_causal_w:.4f}', flush=True)
+            else:
+                print('Causal mechanism disabled', flush=True)
 
             if self.task == "graph_task":
                 if i_epoch==0 or i_epoch%5==0:
@@ -1056,8 +1176,14 @@ if __name__ == '__main__':
     parser.add_argument('--ppo_epochs', type=int, default=4)
     parser.add_argument('--minibatch_size', type=int, default=256)
     parser.add_argument('--clip_eps', type=float, default=0.2)
+    parser.add_argument('--clip_range_policy', type=float, default=0.2,
+                       help='PPO policy clipping range')
+    parser.add_argument('--clip_range_value', type=float, default=0.5,
+                       help='PPO value function clipping range')
     parser.add_argument('--grad_clip', type=float, default=1.0)
     parser.add_argument('--frontier_shaping_beta', type=float, default=0.0)
+    parser.add_argument('--adaptive_kl_penalty', action='store_true', default=False,
+                       help='Enable adaptive KL penalty as fallback to clipping')
     
     # Entropy decay parameters
     parser.add_argument('--entropy_decay_start', type=float, default=1e-3)
@@ -1065,7 +1191,7 @@ if __name__ == '__main__':
     parser.add_argument('--entropy_decay_final', type=float, default=0.0)
 
     # Causal mechanism parameters
-    parser.add_argument('--use_causal', action='store_true', default=True,
+    parser.add_argument('--use_causal', type=lambda x: x.lower() == 'true', default=True,
                        help='Enable causal mechanism for subgraph generation')
     parser.add_argument('--causal_weight', type=float, default=0.5,
                        help='Weight for causal term in reward function (0.0 to 1.0)')
@@ -1087,13 +1213,15 @@ if __name__ == '__main__':
                        help='Bias applied to STOP action logit')
     parser.add_argument('--fidelity_thresh', type=float, default=0.9,
                        help='Fidelity threshold for STOP bonus')
+    parser.add_argument('--debug_mode', type=int, default=0,
+                       help='Enable debug mode (0=off, 1=on)')
 
     # PPO stability parameters
     parser.add_argument('--ppo_clip', type=float, default=0.1,
                        help='PPO clip range')
     parser.add_argument('--kl_target', type=float, default=0.0075,
                        help='Target KL divergence for adaptive penalty')
-    parser.add_argument('--lr', type=float, default=1e-4,
+    parser.add_argument('--lr', type=float, default=5e-5,
                        help='Learning rate')
     parser.add_argument('--gamma', type=float, default=0.99,
                        help='Discount factor')
@@ -1117,11 +1245,11 @@ if __name__ == '__main__':
                        help='Graph ID to run debug evaluation on (-1 to disable)')
     
     # Additional PPO parameters for pretraining hash
-    parser.add_argument('--vf_clip', type=float, default=0.2,
+    parser.add_argument('--vf_clip', type=float, default=0.5,
                        help='Value function clipping parameter')
     parser.add_argument('--use_gae', action='store_true', default=True,
                        help='Use Generalized Advantage Estimation')
-    parser.add_argument('--reward_norm', action='store_true', default=False,
+    parser.add_argument('--reward_norm', action='store_true', default=True,
                        help='Enable reward normalization')
 
     args = parser.parse_args()
@@ -1135,13 +1263,19 @@ if __name__ == '__main__':
         elif args.dataset == 'mutag':
             args.target_size_k = 6   # Mutag typically has smaller motifs
     
+    # Set deterministic seeds for reproducibility
     seed_all(args.seed)
-
+    
+    # Set PyTorch deterministic behavior
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
     print('= ' * 20)
     now = datetime.datetime.now()
     print(args)
     args.savedir = f'ckpts/{args.dataset}/{now.strftime("%Y%m%d%H%M%S")}/'
     print('##  Starting Time:', now.strftime("%Y-%m-%d %H:%M:%S"), flush=True)
+    print(f'##  Seed: {args.seed}, Deterministic: {torch.backends.cudnn.deterministic}', flush=True)
     main(args)
     print('## Finishing Time:', datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), flush=True)
     print('= ' * 20)

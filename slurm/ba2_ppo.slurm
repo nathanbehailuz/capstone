@@ -98,6 +98,11 @@ GAE_LAMBDA=0.95
 MAX_GRAD_NORM=0.5
 VF_CLIP=0.2
 
+# Additional PPO Parameters (aligned with syn3_ppo.slurm)
+CLIP_RANGE_POLICY=0.2
+CLIP_RANGE_VALUE=0.5
+ADAPTIVE_KL_PENALTY=True
+
 # Pretraining Parameters
 PRETRAIN_L_SAMPLE_RATE=1.0
 UPDATE_L_SAMPLE_RATE=0.2
@@ -111,6 +116,7 @@ N_HOP=3
 MAX_SIZE=20
 
 # Causal Parameters
+USE_CAUSAL=False
 CAUSAL_WEIGHT=0.5
 CAUSAL_WARMUP_EPOCHS=5
 
@@ -134,6 +140,10 @@ ENTROPY_COEFF_END=0.0001
 FRONTIER_SHAPING_BETA=0.0
 EDGE_SCORE_AGG="max"
 DEBUG_EVAL_GRAPH=-1
+
+# Additional Parameters (aligned with syn3_ppo.slurm)
+DEBUG_MODE=0
+REWARD_NORM=1
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
 
@@ -201,7 +211,7 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --entropy_decay_start "${ENTROPY_DECAY_START}" \
     --entropy_decay_end "${ENTROPY_DECAY_END}" \
     --entropy_decay_final "${ENTROPY_DECAY_FINAL}" \
-    --use_causal \
+    --use_causal "${USE_CAUSAL}" \
     --causal_weight "${CAUSAL_WEIGHT}" \
     --causal_warmup_epochs "${CAUSAL_WARMUP_EPOCHS}" \
     --target_size_k "${TARGET_SIZE_K}" \
@@ -213,6 +223,9 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --fidelity_thresh "${FIDELITY_THRESH}" \
     --ppo_clip "${PPO_CLIP}" \
     --kl_target "${KL_TARGET}" \
+    --clip_range_policy "${CLIP_RANGE_POLICY}" \
+    --clip_range_value "${CLIP_RANGE_VALUE}" \
+    --adaptive_kl_penalty \
     --lr "${LR}" \
     --gamma "${GAMMA}" \
     --gae_lambda "${GAE_LAMBDA}" \
@@ -224,6 +237,8 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --debug_eval_graph "${DEBUG_EVAL_GRAPH}" \
     --vf_clip "${VF_CLIP}" \
     --use_gae \
+    --debug_mode "${DEBUG_MODE}" \
+    --reward_norm \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

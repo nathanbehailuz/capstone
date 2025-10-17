@@ -32,6 +32,10 @@ class NodeLevelCausalExplainer(nn.Module):
         self.model = gnn_model
         self.model.eval()  # Keep GNN frozen
         
+        # CRITICAL FIX: Freeze all parameters to prevent gradient leakage
+        for p in self.model.parameters():
+            p.requires_grad_(False)
+        
         self.num_labels = num_labels
         self.hidden_size = hidden_size
         self.use_edge_attr = use_edge_attr
@@ -45,8 +49,10 @@ class NodeLevelCausalExplainer(nn.Module):
         )
         
         # Network to generate action probabilities
+        # CRITICAL FIX: Input is hidden_size (not hidden_size * (1 + use_edge_attr))
+        # because we don't actually concatenate edge features yet
         self.edge_action_prob_generator = nn.Sequential(
-            nn.Linear(hidden_size * (1 + use_edge_attr), hidden_size),
+            nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
             nn.Linear(hidden_size, num_labels)
         )
@@ -74,29 +80,44 @@ class NodeLevelCausalExplainer(nn.Module):
         ava_edge_index = graph.edge_index.T[~state].T  # [2, num_available_edges]
         ava_edge_attr = graph.edge_attr[~state] if hasattr(graph, 'edge_attr') and graph.edge_attr is not None else None
         
+        # CRITICAL FIX: Guard against no available edges
+        if ava_edge_index.size(1) == 0:
+            return torch.empty(0, device=graph.x.device)
+        
         # ========== STEP 2: CAUSAL MECHANISM - Compute Factual Representations ==========
         
         # Factual: Node representations with ALL edges
-        ava_node_reps_0 = self.model.get_node_reps(
-            graph.x,           # All node features
-            graph.edge_index,  # ALL edges (factual)
-            graph.edge_attr if hasattr(graph, 'edge_attr') else None,   # All edge features
-            graph.batch if hasattr(graph, 'batch') else None
-        )  # Shape: [num_nodes, hidden_dim]
+        # CRITICAL FIX: Wrap in no_grad to prevent gradient leakage
+        with torch.no_grad():
+            ava_node_reps_0 = self.model.get_node_reps(
+                graph.x,           # All node features
+                graph.edge_index,  # ALL edges (factual)
+                graph.edge_attr if hasattr(graph, 'edge_attr') else None,   # All edge features
+                graph.batch if hasattr(graph, 'batch') else None
+            )  # Shape: [num_nodes, hidden_dim]
         
         # ========== STEP 3: CAUSAL MECHANISM - Compute Counterfactual Representations ==========
         
         # Counterfactual: Node representations with ONLY selected edges
-        if len(torch.where(state == True)[0]) == 0:
+        if len(torch.where(state == True)[0]) == 0 or ocp_edge_index.size(1) == 0:
             # No edges selected yet - zero representation
+            # OR: Empty edge index (isolated nodes) - zero representation
             ava_node_reps_1 = torch.zeros_like(ava_node_reps_0)
         else:
-            ava_node_reps_1 = self.model.get_node_reps(
-                graph.x,          # Same node features
-                ocp_edge_index,   # ONLY selected edges (counterfactual)
-                ocp_edge_attr,    # Only selected edge features
-                graph.batch if hasattr(graph, 'batch') else None
-            )  # Shape: [num_nodes, hidden_dim]
+            # CRITICAL: Check if ocp_edge_index has edges before calling GNN
+            # GCNConv cannot handle empty edge_index (causes shape mismatch)
+            try:
+                with torch.no_grad():
+                    ava_node_reps_1 = self.model.get_node_reps(
+                        graph.x,          # Same node features
+                        ocp_edge_index,   # ONLY selected edges (counterfactual)
+                        ocp_edge_attr,    # Only selected edge features
+                        graph.batch if hasattr(graph, 'batch') else None
+                    )  # Shape: [num_nodes, hidden_dim]
+            except RuntimeError as e:
+                # If GNN fails (e.g., shape mismatch), use zero representation
+                print(f"[CAUSAL] Warning: GNN forward failed for counterfactual, using zero representation")
+                ava_node_reps_1 = torch.zeros_like(ava_node_reps_0)
         
         # ========== STEP 4: CAUSAL EFFECT - Compute the Difference ==========
         
@@ -148,6 +169,10 @@ class GraphLevelCausalExplainer(nn.Module):
         
         self.model = gnn_model
         self.model.eval()
+        
+        # CRITICAL FIX: Freeze all parameters to prevent gradient leakage
+        for p in self.model.parameters():
+            p.requires_grad_(False)
         
         self.num_labels = num_labels
         self.hidden_size = hidden_size
@@ -434,7 +459,10 @@ class CausalRewardCalculator:
     
     def compute_causal_reward(self, graph, selected_nodes, target_y):
         """
-        Compute causal-based reward for a given subgraph.
+        Compute causal-based reward for a given subgraph using TRUE causal deltas.
+        
+        CRITICAL FIX: Instead of summing softmax (which always = 1.0), we compute
+        the actual causal effect of the subgraph on the model's prediction.
         
         Args:
             graph: Original graph
@@ -442,32 +470,94 @@ class CausalRewardCalculator:
             target_y: Target class label
             
         Returns:
-            causal_reward: Scalar reward based on causal importance
+            causal_reward: Scalar reward based on marginal causal effect
         """
-        # Convert selected nodes to edge selection state
-        # This is a simplified version - in practice, you'd need to map nodes to edges
+        # Convert selected nodes to edge selection state (vectorized)
         edge_index = graph.edge_index
-        state = torch.zeros(edge_index.size(1), dtype=torch.bool, device=edge_index.device)
+        device = edge_index.device
         
-        # Mark edges connected to selected nodes as selected
-        selected_nodes_set = set(selected_nodes)
-        for i, (src, dst) in enumerate(edge_index.T):
-            if src.item() in selected_nodes_set or dst.item() in selected_nodes_set:
-                state[i] = True
+        # CRITICAL FIX: Vectorized edge mask (no Python loop)
+        node_mask = torch.zeros(graph.x.size(0), dtype=torch.bool, device=device)
+        selected_nodes_tensor = torch.as_tensor(selected_nodes, dtype=torch.long, device=device)
+        node_mask[selected_nodes_tensor] = True
+        state = node_mask[edge_index[0]] & node_mask[edge_index[1]]
         
-        # Get causal importance scores
-        if isinstance(self.causal_explainer, NodeLevelCausalExplainer):
-            action_probs = self.causal_explainer(graph, state, target_y)
-            # Reward is the sum of importance scores for selected edges
-            selected_edge_probs = action_probs[~state]  # Available edges become selected
-            causal_reward = torch.sum(selected_edge_probs).item()
-        else:
-            # GraphLevelCausalExplainer
-            action_probs, _, _, _ = self.causal_explainer(graph, state, train_flag=False)
-            selected_edge_probs = action_probs[~state]  # Available edges become selected
-            causal_reward = torch.sum(selected_edge_probs).item()
+        # Edge cases
+        if state.sum() == 0:
+            # No edges in subgraph - return small constant (not punish, just neutral)
+            return 0.0
         
-        return causal_reward
+        if (~state).sum() == 0:
+            # All edges selected (full graph) - not a good explanation
+            return 0.0
+        
+        # CRITICAL FIX: Compute TRUE causal effect using CE-difference
+        # Compare: control (subgraph) vs counterfactual (no subgraph / empty graph)
+        
+        with torch.no_grad():
+            # Control: prediction with current subgraph
+            ctrl_edge_index = edge_index[:, state]
+            if ctrl_edge_index.size(1) == 0:
+                return 0.0
+            
+            try:
+                # Get prediction for subgraph
+                edge_weights_ctrl = torch.ones(ctrl_edge_index.size(1), device=device)
+                ctrl_logits = self.gnn_model(graph.x, ctrl_edge_index, edge_weights_ctrl)
+                
+                # Handle node-level vs graph-level predictions
+                if ctrl_logits.dim() > 1 and ctrl_logits.size(0) > 1:
+                    # Node classification: use seed node (first selected node)
+                    seed_node = selected_nodes[0]
+                    if seed_node < ctrl_logits.size(0):
+                        ctrl_logits = ctrl_logits[seed_node].unsqueeze(0)
+                    else:
+                        return 0.0
+                elif ctrl_logits.dim() == 1:
+                    ctrl_logits = ctrl_logits.unsqueeze(0)
+                
+                # Compute log probability for target class
+                ctrl_logp = torch.log_softmax(ctrl_logits, dim=-1).squeeze()
+                if ctrl_logp.dim() == 0:
+                    ctrl_logp = ctrl_logp.unsqueeze(0)
+                ctrl_logp_c = ctrl_logp[target_y]
+                
+                # Counterfactual: prediction with NO edges (baseline)
+                # This measures how much the subgraph improves prediction vs nothing
+                baseline_logits = self.gnn_model(graph.x, torch.empty((2, 0), dtype=torch.long, device=device), 
+                                                 torch.empty(0, device=device))
+                
+                if baseline_logits.dim() > 1 and baseline_logits.size(0) > 1:
+                    seed_node = selected_nodes[0]
+                    if seed_node < baseline_logits.size(0):
+                        baseline_logits = baseline_logits[seed_node].unsqueeze(0)
+                    else:
+                        return 0.0
+                elif baseline_logits.dim() == 1:
+                    baseline_logits = baseline_logits.unsqueeze(0)
+                
+                baseline_logp = torch.log_softmax(baseline_logits, dim=-1).squeeze()
+                if baseline_logp.dim() == 0:
+                    baseline_logp = baseline_logp.unsqueeze(0)
+                baseline_logp_c = baseline_logp[target_y]
+                
+                # Causal effect: how much does subgraph improve log-prob for target class?
+                causal_delta = (ctrl_logp_c - baseline_logp_c).item()
+                
+                # Add correctness bonus
+                pred_class = ctrl_logits.argmax(dim=-1).item()
+                correctness_bonus = 0.5 if pred_class == target_y else -0.5
+                
+                causal_reward = causal_delta + correctness_bonus
+                
+                print(f"[CAUSAL REWARD] Subgraph: {len(selected_nodes)} nodes, {state.sum().item()} edges | "
+                      f"Delta: {causal_delta:.4f}, Correct: {pred_class==target_y}, Total: {causal_reward:.4f}")
+                
+                return causal_reward
+                
+            except Exception as e:
+                print(f"[CAUSAL REWARD] Error computing causal delta: {e}")
+                return 0.0
     
     def compute_combined_reward(self, original_reward, causal_reward):
         """
