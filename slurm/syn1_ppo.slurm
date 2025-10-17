@@ -47,6 +47,22 @@ export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 # Sanity: use the env's Python explicitly
 PYBIN="${CONDA_PREFIX}/bin/python"
 
+# Threads & perf-friendly defaults
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export PYTHONUNBUFFERED=1
+
+# CUDA placement: Slurm sets CUDA_VISIBLE_DEVICES; honor it.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# PyTorch memory allocator: reduces fragmentation in long runs
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# (Optional) Dataloader workers hint your code can read; harmless if unused
+export DATALOADER_WORKERS=$(( ${SLURM_CPUS_PER_TASK:-4} > 1 ? ${SLURM_CPUS_PER_TASK:-4} - 1 : 1 ))
+
 # Helpful runtime flags while debugging
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_SHOW_CPP_STACKTRACES=1
@@ -66,11 +82,40 @@ SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn1"
 POLICY="PPO"
 N_EPOCHS=10
-SIZE_REG=0.01
-SIM_REG=1.0
-RADIUS_PENALTY=0.1
+PPO_EPOCHS=6
+N_ROLLOUTS=10
+USE_CAUSAL=False
+
+# Regularization - BALANCED for proper size control
+SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)
+SIM_REG=1.0          # Increased 10x: was 0.001 (need stronger similarity)
+RADIUS_PENALTY=0.1   # Increased 10x: was 0.01 (need radius control)
+
+# Learning rate - Higher for value function learning
+LR=0.0003            # Increased 3x: was 0.0001 default (value function needs faster learning)
+
+# Causal mechanism - FULL IMPLEMENTATION with CE-difference
+CAUSAL_WEIGHT=0.3   # Moderate weight with warmup (0.05-0.2 range)
+CAUSAL_WARMUP=0     # Longer warmup for stability (15-25 epochs)
+
+# Size targets - Enable proper size control
+TARGET_SIZE_K=10     # Target size closer to ground truth (11-13 nodes)
+LAMBDA_SIZE=0.5      # Enable hinge loss for size control
+LAMBDA_RADIUS=0.5    # Enable adaptive radius penalty
+STEP_COST=0.01       # Enable step cost to encourage efficiency
+
+# Fidelity threshold - DISABLE artificial bonuses
+FIDELITY_THRESH=0.0  # Disable EXTREME bonuses (causing value explosion)
+
+# Debug and size parameters
+DEBUG_MODE=0
+MAX_SIZE=15
+REWARD_NORM=1
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
+
+# Clean the result file before starting
+> "$RESULT_FILE"
 
 echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
 
@@ -103,9 +148,29 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --seed "${SEED}" \
     --policy "${POLICY}" \
     --n_epochs "${N_EPOCHS}" \
+    --ppo_epochs "${PPO_EPOCHS}" \
+    --n_rollouts "${N_ROLLOUTS}" \
+    --lr "${LR}" \
     --size_reg "${SIZE_REG}" \
     --sim_reg "${SIM_REG}" \
     --radius_penalty "${RADIUS_PENALTY}" \
+    --causal_weight "${CAUSAL_WEIGHT}" \
+    --causal_warmup_epochs "${CAUSAL_WARMUP}" \
+    --lambda_size "${LAMBDA_SIZE}" \
+    --lambda_radius "${LAMBDA_RADIUS}" \
+    --step_cost "${STEP_COST}" \
+    --use_causal "${USE_CAUSAL}" \
+    --clip_range_policy 0.2 \
+    --clip_range_value 0.5 \
+    --kl_target 0.025 \
+    --adaptive_kl_penalty \
+    --entropy_decay_start 0.001 \
+    --entropy_decay_end 0.0005 \
+    --fidelity_thresh "${FIDELITY_THRESH}" \
+    --max_size "${MAX_SIZE}" \
+    --debug_mode "${DEBUG_MODE}" \
+    --target_size_k "${TARGET_SIZE_K}" \
+    --reward_norm \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"
