@@ -972,6 +972,7 @@ class Runner:
                                 'l_lr', 'g_lr',  'pretrain_g_batch_size', 'with_attr', 'ds_name']
         # Add PPO hyperparameters to hash calculation using actual arguments
         ppo_hyperparams = {
+            # Core PPO parameters
             'gamma': args.gamma,
             'clip_range': args.clip_eps, 
             'vf_clip': args.vf_clip,
@@ -979,7 +980,27 @@ class Runner:
             'minibatch_size': args.minibatch_size,
             'use_gae': args.use_gae,
             'gae_lambda': args.gae_lambda,
-            'reward_norm': args.reward_norm
+            'reward_norm': args.reward_norm,
+            
+            'clip_range_policy': args.clip_range_policy,
+            'clip_range_value': args.clip_range_value,
+            'adaptive_kl_penalty': args.adaptive_kl_penalty,
+            'kl_target': args.kl_target,
+            'ppo_clip': args.ppo_clip,
+            'grad_clip': args.grad_clip,
+            'max_grad_norm': args.max_grad_norm,
+            'use_value_clip': args.use_value_clip,
+            
+            # Entropy scheduling parameters
+            'entropy_decay_start': args.entropy_decay_start,
+            'entropy_decay_end': args.entropy_decay_end,
+            'entropy_decay_final': args.entropy_decay_final,
+            'entropy_coeff_start': args.entropy_coeff_start,
+            'entropy_coeff_end': args.entropy_coeff_end,
+            
+            # Other PPO-related parameters
+            'frontier_shaping_beta': args.frontier_shaping_beta,
+            'debug_mode': args.debug_mode
         }
         for key, value in ppo_hyperparams.items():
             arg_dict[key] = value
