@@ -24,6 +24,20 @@ from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCaus
 def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn, dataset, writer, use_set=True):
     eval_seeds = np.array(eval_seeds)
     shuffle_index = np.arange(len(train_comms)) 
+    
+    # Initialize metrics tracking
+    pretrain_metrics = {
+        'iterations': [],
+        'batch_losses': [],
+        'avg_losses': [],
+        'sample_counts': [],
+        'batch_sizes': [],
+        'dataset': dataset,
+        'use_set': use_set,
+        'max_size': max_size,
+        'batch_size': bs,
+        'total_iterations': n
+    }
 
     for i in range(n):
         np.random.shuffle(shuffle_index)
@@ -31,6 +45,9 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
         eval_seeds = eval_seeds[shuffle_index]
 
         batch_loss = 0.
+        batch_count = 0
+        total_samples = 0
+        
         for j in range(len(train_comms) // bs + 1):
             batch = train_comms[j*bs:(j+1)*bs]
             batch_seeds = eval_seeds[j*bs:(j+1)*bs]
@@ -48,14 +65,30 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
             else:
                 policy_loss = g.train_from_lists(batch)
             batch_loss += policy_loss
-        batch_loss /= j + 1
+            batch_count += 1
+            total_samples += len(batch)
+        
+        if batch_count > 0:
+            avg_loss = batch_loss / batch_count
+        else:
+            avg_loss = 0.0
+            
+        # Store metrics for this iteration
+        pretrain_metrics['iterations'].append(i + 1)
+        pretrain_metrics['batch_losses'].append(batch_loss)
+        pretrain_metrics['avg_losses'].append(avg_loss)
+        pretrain_metrics['sample_counts'].append(total_samples)
+        pretrain_metrics['batch_sizes'].append(batch_count)
+        
         if use_set:
             s = 'Set '
         else:
             s = 'List'
         if writer is not None:
-            writer.add_scalar(f'Pretrain/GLoss{s.strip()}', batch_loss, i)
-        print(f'[Pretrain-{s} {i+1:3d}] Loss = {batch_loss:2.4f}', flush=True)
+            writer.add_scalar(f'Pretrain/GLoss{s.strip()}', avg_loss, i)
+        print(f'[Pretrain-{s} {i+1:3d}] Loss = {avg_loss:2.4f} | Batches = {batch_count} | Samples = {total_samples}', flush=True)
+    
+    return pretrain_metrics
 
 
 class DummyWriter:
@@ -482,6 +515,12 @@ class Runner:
             score = float(mask[i])
             edge_scores[(src, dst)] = score
         
+        # print(f"[DEBUG] Generated {len(edge_scores)} edge scores for subgraph with {len(selected_nodes)} nodes")
+        if len(edge_scores) > 0:
+            # Show first few edge scores as example
+            sample_scores = list(edge_scores.items())[:3]
+            # print(f"[DEBUG] Sample edge scores: {sample_scores}")
+        
         return (o_g, mask), edge_scores
 
     def eval_loss(self, cs):
@@ -636,6 +675,7 @@ class Runner:
     def save_edge_scores_to_file(self, edge_scores_list, prefix):
         """Save edge scores to the results file."""
         if not edge_scores_list:
+            print(f"No edge scores to save for {prefix}")
             return
             
         # Determine the results file path
@@ -654,18 +694,24 @@ class Runner:
         modified_lines = []
         edge_scores_idx = 0
         
+        print(f"Looking for epoch pattern: {epoch_pattern}")
+        print(f"Number of edge scores to save: {len(edge_scores_list)}")
+        
         for i, line in enumerate(lines):
             modified_lines.append(line)
             
             # Check if this is an epoch marker
             if re.search(epoch_pattern, line):
+                print(f"Found epoch marker at line {i}: {line.strip()}")
                 # Look ahead for the next lines that contain subgraph data
                 j = i + 1
                 while j < len(lines) and not re.search(r'\[EVAL-', lines[j]):
                     current_line = lines[j]
                     
                     # Check if this line contains subgraph data (sgs [...])
+                    # Handle different dataset formats: g_id/n_id ... sgs [...] or n_id ... sgs [...]
                     if 'sgs' in current_line and '[' in current_line and ']' in current_line:
+                        print(f"Found subgraph line at {j}: {current_line.strip()}")
                         if edge_scores_idx < len(edge_scores_list):
                             edge_scores = edge_scores_list[edge_scores_idx]
                             
@@ -679,12 +725,18 @@ class Runner:
                                 
                                 # Add edge scores line after the subgraph line
                                 modified_lines.append(f"  {edge_scores_str}\n")
+                                print(f"Added edge scores: {edge_scores_str}")
                                 edge_scores_idx += 1
                             else:
                                 modified_lines.append("  edge_scores {}\n")
+                                print(f"Added empty edge scores")
                                 edge_scores_idx += 1
+                        else:
+                            print(f"Warning: No more edge scores available (idx={edge_scores_idx}, total={len(edge_scores_list)})")
                     
                     j += 1
+        
+        print(f"Processed {edge_scores_idx} edge scores out of {len(edge_scores_list)}")
         
         # Write the modified content back to the file
         try:
@@ -939,6 +991,7 @@ class Runner:
 
     def _pretrain(self):
         args = self.args
+        pretrain_metrics = {}
 
         if self.task == "graph_task":
             # construct pre-training samples
@@ -960,8 +1013,15 @@ class Runner:
             print("pretrain_samples max_size_in_sg", max_size_in_sg, flush=True)
 
         # pretrain g
-        pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_list, self.score_fn, self.args.dataset, writer=None, use_set=False)
-        pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_set, self.score_fn, self.args.dataset, writer=None, use_set=True)
+        print("Starting List-based pretraining...", flush=True)
+        list_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_list, self.score_fn, self.args.dataset, writer=None, use_set=False)
+        pretrain_metrics['list_based'] = list_metrics
+        
+        print("Starting Set-based pretraining...", flush=True)
+        set_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_set, self.score_fn, self.args.dataset, writer=None, use_set=True)
+        pretrain_metrics['set_based'] = set_metrics
+        
+        return pretrain_metrics
 
 
     def pretrain(self):
@@ -1012,9 +1072,101 @@ class Runner:
             print('Load the pre-trained model!', flush=True)
             self.load(pth_fname)
         else:
-            self._pretrain()
+            print('Pre-trained model not found! Starting pretraining...', flush=True)
+            pretrain_metrics = self._pretrain()
             print('Save the pre-trained model!', flush=True)
             self.save(pth_fname)
+            
+            # Create detailed log file for pretraining performance
+            self._create_pretrain_log(pretrain_metrics, args)
+
+    def _create_pretrain_log(self, pretrain_metrics, args):
+        """Create a detailed log file for pretraining performance when no pretrained model is found."""
+        import datetime
+        
+        # Create log filename
+        log_filename = f"{args.dataset}_seed_{args.seed}.txt"
+        log_path = pathlib.Path(log_filename)
+        
+        # Clear existing file if it exists
+        if log_path.exists():
+            log_path.unlink()
+            print(f"Cleared existing log file: {log_filename}", flush=True)
+        
+        # Create new log file
+        with open(log_path, 'w') as f:
+            # Write header with timestamp and configuration
+            f.write(f"# Pretraining Performance Log\n")
+            f.write(f"# Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# Dataset: {args.dataset} | Seed: {args.seed}\n")
+            f.write(f"# Hash Code: {hashlib.md5(' '.join([str(vars(args)[k]) for k in ['pretrain_list', 'pretrain_set', 'pretrain_l_iter', 'pretrain_l_sample_rate', 'hidden_size', 'dataset', 'seed', 'max_size', 'n_hop', 'l_lr', 'g_lr', 'pretrain_g_batch_size', 'with_attr', 'ds_name']]).encode('utf-8')).hexdigest().upper()}\n")
+            f.write(f"# Task: {self.task}\n")
+            f.write(f"# Model: {args.model}\n")
+            f.write(f"# Max Size: {args.max_size} | N Hop: {args.n_hop}\n")
+            f.write(f"# Pretrain Samples: {len(self.pretrain_nodes) if hasattr(self, 'pretrain_nodes') else 'N/A'}\n")
+            f.write(f"#\n")
+            
+            # Write hyperparameters section
+            f.write(f"# Hyperparameters:\n")
+            f.write(f"# pretrain_list={args.pretrain_list} pretrain_set={args.pretrain_set}\n")
+            f.write(f"# pretrain_l_iter={args.pretrain_l_iter} pretrain_l_sample_rate={args.pretrain_l_sample_rate}\n")
+            f.write(f"# hidden_size={args.hidden_size} g_lr={args.g_lr} l_lr={args.l_lr}\n")
+            f.write(f"# pretrain_g_batch_size={args.pretrain_g_batch_size} with_attr={args.with_attr}\n")
+            f.write(f"# gamma={args.gamma} clip_eps={args.clip_eps} ppo_epochs={args.ppo_epochs}\n")
+            f.write(f"# minibatch_size={args.minibatch_size} use_gae={args.use_gae} gae_lambda={args.gae_lambda}\n")
+            f.write(f"# reward_norm={args.reward_norm} clip_range_policy={args.clip_range_policy}\n")
+            f.write(f"# clip_range_value={args.clip_range_value} kl_target={args.kl_target}\n")
+            f.write(f"# entropy_decay_start={args.entropy_decay_start} entropy_decay_end={args.entropy_decay_end}\n")
+            f.write(f"#\n")
+            
+            # Write pretraining metrics
+            f.write(f"# Pretraining Performance Metrics:\n")
+            
+            # List-based pretraining metrics
+            if 'list_based' in pretrain_metrics:
+                list_metrics = pretrain_metrics['list_based']
+                f.write(f"# List-based Pretraining:\n")
+                f.write(f"# Dataset: {list_metrics['dataset']} | Use Set: {list_metrics['use_set']}\n")
+                f.write(f"# Max Size: {list_metrics['max_size']} | Batch Size: {list_metrics['batch_size']}\n")
+                f.write(f"# Total Iterations: {list_metrics['total_iterations']}\n")
+                
+                # Write iteration-by-iteration data
+                f.write(f"# Iteration | Avg Loss | Batch Loss | Batches | Samples\n")
+                for i in range(len(list_metrics['iterations'])):
+                    f.write(f"LIST {list_metrics['iterations'][i]:3d} | {list_metrics['avg_losses'][i]:8.4f} | {list_metrics['batch_losses'][i]:10.4f} | {list_metrics['batch_sizes'][i]:7d} | {list_metrics['sample_counts'][i]:7d}\n")
+                
+                # Write summary statistics
+                if list_metrics['avg_losses']:
+                    f.write(f"# List Summary: Min Loss={min(list_metrics['avg_losses']):.4f} | Max Loss={max(list_metrics['avg_losses']):.4f} | Final Loss={list_metrics['avg_losses'][-1]:.4f}\n")
+                    f.write(f"# List Summary: Total Samples={sum(list_metrics['sample_counts'])} | Avg Samples/Iter={sum(list_metrics['sample_counts'])/len(list_metrics['sample_counts']):.1f}\n")
+                f.write(f"#\n")
+            
+            # Set-based pretraining metrics
+            if 'set_based' in pretrain_metrics:
+                set_metrics = pretrain_metrics['set_based']
+                f.write(f"# Set-based Pretraining:\n")
+                f.write(f"# Dataset: {set_metrics['dataset']} | Use Set: {set_metrics['use_set']}\n")
+                f.write(f"# Max Size: {set_metrics['max_size']} | Batch Size: {set_metrics['batch_size']}\n")
+                f.write(f"# Total Iterations: {set_metrics['total_iterations']}\n")
+                
+                # Write iteration-by-iteration data
+                f.write(f"# Iteration | Avg Loss | Batch Loss | Batches | Samples\n")
+                for i in range(len(set_metrics['iterations'])):
+                    f.write(f"SET  {set_metrics['iterations'][i]:3d} | {set_metrics['avg_losses'][i]:8.4f} | {set_metrics['batch_losses'][i]:10.4f} | {set_metrics['batch_sizes'][i]:7d} | {set_metrics['sample_counts'][i]:7d}\n")
+                
+                # Write summary statistics
+                if set_metrics['avg_losses']:
+                    f.write(f"# Set Summary: Min Loss={min(set_metrics['avg_losses']):.4f} | Max Loss={max(set_metrics['avg_losses']):.4f} | Final Loss={set_metrics['avg_losses'][-1]:.4f}\n")
+                    f.write(f"# Set Summary: Total Samples={sum(set_metrics['sample_counts'])} | Avg Samples/Iter={sum(set_metrics['sample_counts'])/len(set_metrics['sample_counts']):.1f}\n")
+                f.write(f"#\n")
+            
+            # Overall summary
+            f.write(f"# Overall Pretraining Summary:\n")
+            f.write(f"# Total Pretraining Time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"# Pretraining completed successfully - model saved to pretrained/\n")
+            f.write(f"# Next: Main training will begin with this pretrained model\n")
+        
+        print(f"Pretraining performance log saved to: {log_filename}", flush=True)
 
 
     def train_g_step(self, g_it):
@@ -1117,8 +1269,6 @@ class Runner:
                 metrics_string = '_'.join([f'{x * 100:0>2.0f}' for x in [auc]])
                 self.save(self.savedir / f'{i_epoch + 1:0>5d}_{metrics_string}.pth')
                 self.writer.add_scalar('Eval/Auc', auc, i_epoch)
-
-
 
 
 def main(args):
