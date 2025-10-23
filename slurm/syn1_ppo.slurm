@@ -82,8 +82,8 @@ SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn1"
 POLICY="PPO"
 N_EPOCHS=10
-PPO_EPOCHS=6
-N_ROLLOUTS=10
+PPO_EPOCHS=4              # Reduced from 6 for stability
+N_ROLLOUTS=32             # Increased from 10 to compensate for shorter trajectories
 USE_CAUSAL=False
 
 # Regularization - BALANCED for proper size control
@@ -111,6 +111,33 @@ FIDELITY_THRESH=0.0  # Disable EXTREME bonuses (causing value explosion)
 DEBUG_MODE=0
 MAX_SIZE=15
 REWARD_NORM=1
+
+# === NEW PPO REFACTORING PARAMETERS ===
+# Delta rewards and STOP bonuses
+DELTA_REWARD=1
+STOP_BONUS_OK=0.10        # Reduced from 0.5 to avoid over-rewarding
+STOP_PENALTY_BAD=0.30     # Increased from 0.2 to discourage bad STOPs
+TARGET_SIZE_K_NEW=8       # Dataset-specific target size
+REWARD_SCALE=5.0          # Global reward scaling factor to un-choke learning
+
+# λ Schedules - More aggressive warmup and scheduling
+WARMUP_EPOCHS=10          # Increased from 5 for better stability
+SCHEDULE_EPOCHS=20        # Increased from 10 for gradual ramp-up
+LAMBDA_SIZE_FINAL=0.02    # Increased from 0.01 for stronger size control
+LAMBDA_RADIUS_FINAL=0.10  # Same as before
+LAMBDA_SIM_FINAL=0.005    # Reduced from 0.01 to reduce similarity pressure
+LAMBDA_SIM_START=0.0      # Same as before
+
+# Normalization
+TRAJ_REWARD_NORM=1
+STD_ADVANTAGE=1
+
+# Entropy scheduling - More aggressive exploration
+ENTROPY_COEFF_START=0.003 # Increased from 1e-3 for better exploration
+ENTROPY_COEFF_END=0.0005  # Increased from 1e-4 for sustained exploration
+
+# Debug
+PPO_DEBUG=1
 
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
 
@@ -161,16 +188,32 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --step_cost "${STEP_COST}" \
     --use_causal "${USE_CAUSAL}" \
     --clip_range_policy 0.2 \
-    --clip_range_value 0.5 \
+    --clip_range_value 0.25 \
     --kl_target 0.025 \
-    --adaptive_kl_penalty \
-    --entropy_decay_start 0.001 \
+    --entropy_decay_start 0.003 \
     --entropy_decay_end 0.0005 \
     --fidelity_thresh "${FIDELITY_THRESH}" \
     --max_size "${MAX_SIZE}" \
     --debug_mode "${DEBUG_MODE}" \
     --target_size_k "${TARGET_SIZE_K}" \
     --reward_norm \
+    \
+    --delta_reward "${DELTA_REWARD}" \
+    --stop_bonus_ok "${STOP_BONUS_OK}" \
+    --stop_penalty_bad "${STOP_PENALTY_BAD}" \
+    --target_size_k "${TARGET_SIZE_K_NEW}" \
+    --reward_scale "${REWARD_SCALE}" \
+    --warmup_epochs "${WARMUP_EPOCHS}" \
+    --schedule_epochs "${SCHEDULE_EPOCHS}" \
+    --lambda_size_final "${LAMBDA_SIZE_FINAL}" \
+    --lambda_radius_final "${LAMBDA_RADIUS_FINAL}" \
+    --lambda_sim_final "${LAMBDA_SIM_FINAL}" \
+    --lambda_sim_start "${LAMBDA_SIM_START}" \
+    --traj_reward_norm "${TRAJ_REWARD_NORM}" \
+    --std_advantage "${STD_ADVANTAGE}" \
+    --entropy_coeff_start "${ENTROPY_COEFF_START}" \
+    --entropy_coeff_end "${ENTROPY_COEFF_END}" \
+    --ppo_debug \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

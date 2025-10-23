@@ -21,6 +21,34 @@ import torch_geometric as ptgeom
 from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer
 
 
+def linear_schedule(epoch, warmup, span, start, end):
+    """Linear schedule helper for λ parameters."""
+    if epoch < warmup:
+        return start
+    t = min(max(epoch - warmup, 0), span)
+    if span <= 0:
+        return end
+    return start + (end - start) * (t / span)
+
+
+def get_lambda_schedule(epoch, args):
+    """Get λ schedule values for current epoch."""
+    # Phase 1 (0..warmup): focus on CE (prediction); size, radius near 0; sim near args.lambda_sim_start
+    lam_size   = 0.0 if epoch < args.warmup_epochs else linear_schedule(
+        epoch, args.warmup_epochs, args.schedule_epochs, 0.0, args.lambda_size_final
+    )
+    lam_radius = 0.0 if epoch < args.warmup_epochs else linear_schedule(
+        epoch, args.warmup_epochs, args.schedule_epochs, 0.0, args.lambda_radius_final
+    )
+    lam_sim    = linear_schedule(
+        epoch, args.warmup_epochs, args.schedule_epochs, args.lambda_sim_start, args.lambda_sim_final
+    )
+    entropy_c  = linear_schedule(
+        epoch, 0, args.warmup_epochs + args.schedule_epochs, args.entropy_coeff_start, args.entropy_coeff_end
+    )
+    return lam_size, lam_radius, lam_sim, entropy_c
+
+
 def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn, dataset, writer, use_set=True):
     eval_seeds = np.array(eval_seeds)
     shuffle_index = np.arange(len(train_comms)) 
@@ -420,6 +448,10 @@ class Runner:
                       step_cost=args.step_cost,
                       stop_bias=args.stop_bias,
                       fidelity_thresh=args.fidelity_thresh,
+                      # Reward scaling
+                      reward_scale=getattr(args, 'reward_scale', 10.0),
+                      stop_bonus_ok=getattr(args, 'stop_bonus_ok', 0.10),
+                      stop_penalty_bad=getattr(args, 'stop_penalty_bad', 0.40),
                       # PPO stability parameters
                       ppo_clip=args.clip_eps,  # Legacy parameter
                       clip_range_policy=args.clip_range_policy,
@@ -433,8 +465,8 @@ class Runner:
                       adaptive_kl_penalty=args.adaptive_kl_penalty,
                       total_epochs=args.n_epochs,
                       # Entropy scheduling
-                      entropy_coeff_start=args.entropy_decay_start,
-                      entropy_coeff_end=args.entropy_decay_end,
+                      entropy_coeff_start=args.entropy_coeff_start,
+                      entropy_coeff_end=args.entropy_coeff_end,
                       entropy_decay_final=args.entropy_decay_final,
                       # Causal mechanism parameters
                       use_causal=use_causal,
@@ -442,7 +474,9 @@ class Runner:
                       causal_weight=causal_weight,
                       causal_warmup_epochs=args.causal_warmup_epochs,
                       # Debug parameters
-                      debug_mode=bool(args.debug_mode))
+                      debug_mode=bool(args.debug_mode),
+                      # Args for reward normalization
+                      args=args)
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
         
@@ -463,6 +497,14 @@ class Runner:
                 target_classes=target_classes,
                 seed_nodes=list(self.eval_seeds)
             )
+        
+        # Set up GNN model and data for delta rewards (always needed for new PPO)
+        g.set_causal_data(
+            gnn_model=self.trained_model,
+            full_edge_index=self.graphs.edge_index,
+            target_classes=None,  # Not needed for delta rewards
+            seed_nodes=list(self.eval_seeds)
+        )
         
         return g
 
@@ -547,10 +589,37 @@ class Runner:
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
         
 
-        masked_preds = torch.stack(masked_preds).squeeze()
+        masked_preds = torch.stack(masked_preds)
         original_preds = torch.stack(original_preds)
+        
+        # Squeeze only middle dimensions if present (e.g., [batch, 1, classes] -> [batch, classes])
+        # but preserve batch dimension
+        if masked_preds.dim() == 3 and masked_preds.size(1) == 1:
+            masked_preds = masked_preds.squeeze(1)
+        elif masked_preds.dim() > 2:
+            # If we have extra dimensions, squeeze them but keep first two dims
+            masked_preds = masked_preds.view(masked_preds.size(0), -1)
+        
+        # Ensure original_preds has batch dimension
+        if original_preds.dim() == 1:
+            original_preds = original_preds.unsqueeze(0)
+        
+        # Convert original_preds logits to class indices for cross-entropy target
+        original_targets = torch.argmax(original_preds, dim=-1)
+        
+        # Ensure batch dimensions match
+        batch_size = masked_preds.size(0)
+        if original_targets.size(0) == 1 and batch_size > 1:
+            # Broadcast single target to match batch size
+            original_targets = original_targets.expand(batch_size)
+        elif original_targets.size(0) != batch_size:
+            raise ValueError(f"Batch size mismatch: masked_preds has {batch_size} samples but original_targets has {original_targets.size(0)}")
+        
+        # Validate and clamp targets
+        num_classes = masked_preds.size(-1)
+        original_targets = torch.clamp(original_targets, 0, num_classes - 1).long()
 
-        prediction_loss = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
+        prediction_loss = torch.nn.functional.cross_entropy(masked_preds, original_targets, reduction='none') 
         prediction_loss = prediction_loss.detach().cpu().numpy()
 
 
@@ -808,10 +877,37 @@ class Runner:
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
 
-        masked_preds = torch.stack(masked_preds).squeeze()
+        masked_preds = torch.stack(masked_preds)
         original_preds = torch.stack(original_preds)
+        
+        # Squeeze only middle dimensions if present (e.g., [batch, 1, classes] -> [batch, classes])
+        # but preserve batch dimension
+        if masked_preds.dim() == 3 and masked_preds.size(1) == 1:
+            masked_preds = masked_preds.squeeze(1)
+        elif masked_preds.dim() > 2:
+            # If we have extra dimensions, squeeze them but keep first two dims
+            masked_preds = masked_preds.view(masked_preds.size(0), -1)
+        
+        # Ensure original_preds has batch dimension
+        if original_preds.dim() == 1:
+            original_preds = original_preds.unsqueeze(0)
+        
+        # Convert original_preds logits to class indices for cross-entropy target
+        original_targets = torch.argmax(original_preds, dim=-1)
+        
+        # Ensure batch dimensions match
+        batch_size = masked_preds.size(0)
+        if original_targets.size(0) == 1 and batch_size > 1:
+            # Broadcast single target to match batch size
+            original_targets = original_targets.expand(batch_size)
+        elif original_targets.size(0) != batch_size:
+            raise ValueError(f"Batch size mismatch: masked_preds has {batch_size} samples but original_targets has {original_targets.size(0)}")
+        
+        # Validate and clamp targets
+        num_classes = masked_preds.size(-1)
+        original_targets = torch.clamp(original_targets, 0, num_classes - 1).long()
 
-        v = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
+        v = torch.nn.functional.cross_entropy(masked_preds, original_targets, reduction='none') 
 
         # Size loss with target size penalty
         if args.size_reg > 0:
@@ -853,7 +949,8 @@ class Runner:
         # This provides gentle encouragement without overwhelming the value function
         if args.fidelity_thresh > 0:
             # Calculate fidelity (1 - prediction loss) for each subgraph
-            fidelity_scores = 1.0 - torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none')
+            # Note: masked_preds and original_targets are already properly dimensioned from above
+            fidelity_scores = 1.0 - torch.nn.functional.cross_entropy(masked_preds, original_targets, reduction='none')
             
             # Apply SMALL bonus for high fidelity (scaled to match regularization)
             fidelity_bonus = torch.where(fidelity_scores >= args.fidelity_thresh, 
@@ -1169,9 +1266,16 @@ class Runner:
         print(f"Pretraining performance log saved to: {log_filename}", flush=True)
 
 
-    def train_g_step(self, g_it):
+    def train_g_step(self, g_it, lam_size=0.0, lam_radius=0.0, lam_sim=0.0, entropy_coef=1e-3):
         shuffle_index = random.choices(list(range(len(self.eval_seeds))), k=self.args.g_batch_size)
-        selected_nodes, r, policy_loss, length = self.g.train_from_rewards(np.array(self.eval_seeds)[shuffle_index], self.score_fn, policy=self.args.policy)
+        selected_nodes, r, policy_loss, length = self.g.update_ppo(
+            np.array(self.eval_seeds)[shuffle_index], 
+            self.score_fn, 
+            lam_size=lam_size,
+            lam_radius=lam_radius, 
+            lam_sim=lam_sim,
+            entropy_coef=entropy_coef
+        )
         
         # Calculate new metrics
         early_stop_rate = self.g.get_early_stop_rate(selected_nodes)
@@ -1188,6 +1292,14 @@ class Runner:
               f'Length={length:2.1f}',
               f'EarlyStopRate={early_stop_rate:.3f}',
               f'AvgSize={avg_size:.1f}', flush=True)
+        
+        return {
+            'reward': r,
+            'policy_loss': policy_loss,
+            'length': length,
+            'early_stop_rate': early_stop_rate,
+            'avg_size': avg_size
+        }
 
 
     def train_l(self, l_epochs, sample_rate):
@@ -1232,15 +1344,20 @@ class Runner:
         
         # Train
         g_it = l_it = -1
-        for i_epoch in range(self.args.n_epochs):
+        max_epochs = 1 if self.args.dry_run_debug else self.args.n_epochs
+        for i_epoch in range(max_epochs):
             print('=' * 20, flush=True)
             print(f'[Epoch {i_epoch + 1:4d}]', flush=True)
             tic = time.time()
             
-            # Update entropy coefficient for decay
-            self.g.update_entropy_coef(i_epoch, self.args.n_epochs)
+            # Compute λ schedules for this epoch
+            lam_size, lam_radius, lam_sim, entropy_c = get_lambda_schedule(i_epoch, self.args)
+            
+            # Update epoch counter
             self.g.update_epoch(i_epoch)
-            print(f'Entropy coefficient: {self.g.current_entropy_coef:.6f}', flush=True)
+            
+            # Log λ schedule values
+            print(f'λ Schedule: size={lam_size:.4f}, radius={lam_radius:.4f}, sim={lam_sim:.4f}, entropy={entropy_c:.4f}', flush=True)
             
             # Log effective causal weight only if causal mechanism is enabled
             if getattr(self.g, 'use_causal', False):
@@ -1257,11 +1374,16 @@ class Runner:
                     l_it += 1
 
             print('Update G', flush=True)
-            self.train_g_step(g_it)
+            stats = self.train_g_step(g_it, lam_size=lam_size, lam_radius=lam_radius, lam_sim=lam_sim, entropy_coef=entropy_c)
             g_it += 1
 
             toc = time.time()
             print(f'Elapsed Time: {toc - tic:.1f}s', flush=True)
+            
+            # Comprehensive logging and diagnostics
+            print(f'[Epoch {i_epoch + 1:4d}] Schedule: λ_size={lam_size:.4f}, λ_radius={lam_radius:.4f}, λ_sim={lam_sim:.4f}, entropy={entropy_c:.4f}', flush=True)
+            print(f'[Epoch {i_epoch + 1:4d}] Stats: Reward={stats["reward"]:.3f}, PLoss={stats["policy_loss"]:.4f}, Length={stats["length"]:.1f}', flush=True)
+            print(f'[Epoch {i_epoch + 1:4d}] Metrics: EarlyStop={stats["early_stop_rate"]:.3f}, AvgSize={stats["avg_size"]:.1f}', flush=True)
 
             # Eval
             if (i_epoch + 1) % self.args.eval_every == 0:
@@ -1269,6 +1391,18 @@ class Runner:
                 metrics_string = '_'.join([f'{x * 100:0>2.0f}' for x in [auc]])
                 self.save(self.savedir / f'{i_epoch + 1:0>5d}_{metrics_string}.pth')
                 self.writer.add_scalar('Eval/Auc', auc, i_epoch)
+            
+            # Dry run debug mode - exit after first epoch
+            if self.args.dry_run_debug:
+                print("[DEBUG] Dry run completed - exiting after first epoch")
+                print(f"[DEBUG] Schedule: λ_size={lam_size:.4f}, λ_radius={lam_radius:.4f}, λ_sim={lam_sim:.4f}, entropy={entropy_c:.4f}")
+                print(f"[DEBUG] Clip eps: {self.args.clip_range_policy:.2f}, Value clip: {self.args.clip_range_value:.2f}")
+                # Show sample episode steps for debugging
+                if hasattr(self.g, '_last_episode_debug'):
+                    print("[DEBUG] Sample episode steps:")
+                    for step_info in self.g._last_episode_debug:
+                        print(f"  Step {step_info['t']}: J_prev={step_info.get('J_prev', 'N/A'):.4f}, J_k={step_info.get('J_k', 'N/A'):.4f}, delta={step_info.get('delta', 'N/A'):.4f}, r_k={step_info.get('r_k', 'N/A'):.4f}, action={step_info.get('action', 'N/A')}, size={step_info.get('size', 'N/A')}")
+                break
 
 
 def main(args):
@@ -1335,7 +1469,7 @@ if __name__ == '__main__':
 
 
     # coordinate 
-    parser.add_argument('--n_epochs', type=int, default=10)  
+    parser.add_argument('--n_epochs', type=int, default=30)  
     parser.add_argument('--n_g_updates', type=int, default=1)
     parser.add_argument('--n_l_updates', type=int, default=10)
     parser.add_argument('--eval_every', type=int, default=1)
@@ -1349,8 +1483,7 @@ if __name__ == '__main__':
     parser.add_argument('--clip_eps', type=float, default=0.2)
     parser.add_argument('--clip_range_policy', type=float, default=0.2,
                        help='PPO policy clipping range')
-    parser.add_argument('--clip_range_value', type=float, default=0.5,
-                       help='PPO value function clipping range')
+    # clip_range_value moved to Reward shaping & schedules section
     parser.add_argument('--grad_clip', type=float, default=1.0)
     parser.add_argument('--frontier_shaping_beta', type=float, default=0.0)
     parser.add_argument('--adaptive_kl_penalty', action='store_true', default=False,
@@ -1382,8 +1515,7 @@ if __name__ == '__main__':
                        help='Cost per step to discourage long trajectories')
     parser.add_argument('--stop_bias', type=float, default=0.5,
                        help='Bias applied to STOP action logit')
-    parser.add_argument('--fidelity_thresh', type=float, default=0.9,
-                       help='Fidelity threshold for STOP bonus')
+    # fidelity_thresh moved to Reward shaping & schedules section
     parser.add_argument('--debug_mode', type=int, default=0,
                        help='Enable debug mode (0=off, 1=on)')
 
@@ -1403,11 +1535,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_value_clip', action='store_true', default=True,
                        help='Enable value function clipping')
 
-    # Entropy scheduling
-    parser.add_argument('--entropy_coeff_start', type=float, default=1e-3,
-                       help='Starting entropy coefficient')
-    parser.add_argument('--entropy_coeff_end', type=float, default=1e-4,
-                       help='Ending entropy coefficient')
+    # Entropy scheduling (moved to Reward shaping & schedules section)
 
     # AUC evaluation parameters
     parser.add_argument('--edge_score_agg', type=str, default='max', choices=['max', 'mean'],
@@ -1422,6 +1550,28 @@ if __name__ == '__main__':
                        help='Use Generalized Advantage Estimation')
     parser.add_argument('--reward_norm', action='store_true', default=True,
                        help='Enable reward normalization')
+
+    # === Reward shaping & schedules ===
+    parser.add_argument("--warmup_epochs", type=int, default=3, help="Epochs for preservation-first warmup.")
+    parser.add_argument("--schedule_epochs", type=int, default=12, help="Epochs to ramp regularizers to full strength.")
+    parser.add_argument("--entropy_coeff_start", type=float, default=3e-3, help="Starting entropy coefficient.")
+    parser.add_argument("--entropy_coeff_end", type=float, default=5e-4, help="Ending entropy coefficient.")
+    parser.add_argument("--reward_scale", type=float, default=10.0, help="Global reward scaling factor to un-choke learning.")
+    parser.add_argument("--delta_reward", type=int, default=1, help="Use incremental causal rewards r_k = -(J_k - J_{k-1}).")
+    parser.add_argument("--stop_bonus_ok", type=float, default=0.10, help="Bonus when STOP and class preserved and size small.")
+    parser.add_argument("--stop_penalty_bad", type=float, default=0.40, help="Penalty when STOP is premature or class not preserved.")
+    parser.add_argument("--fidelity_thresh", type=float, default=0.05, help="Fidelity threshold for STOP bonus.")
+    parser.add_argument("--lambda_size_final", type=float, default=0.02, help="Final size penalty weight.")
+    parser.add_argument("--lambda_radius_final", type=float, default=0.10, help="Final radius penalty weight.")
+    parser.add_argument("--lambda_sim_start", type=float, default=0.0, help="Starting similarity penalty weight.")
+    parser.add_argument("--lambda_sim_final", type=float, default=0.005, help="Final similarity penalty weight.")
+    parser.add_argument("--traj_reward_norm", type=int, default=1, help="Normalize rewards per trajectory.")
+    parser.add_argument("--std_advantage", type=int, default=1, help="Standardize advantages per batch.")
+    parser.add_argument("--clip_range_value", type=float, default=0.25, help="Value function clipping range.")
+
+    # === Debug ===
+    parser.add_argument("--ppo_debug", action='store_true', default=False, help="Enable PPO debug logging")
+    parser.add_argument("--dry_run_debug", action='store_true', default=False, help="Run single epoch debug mode")
 
     args = parser.parse_args()
     

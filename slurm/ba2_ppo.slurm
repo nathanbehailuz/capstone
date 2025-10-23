@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-1
+#SBATCH --array=0
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -145,6 +145,32 @@ DEBUG_EVAL_GRAPH=-1
 DEBUG_MODE=0
 REWARD_NORM=1
 
+# === NEW PPO REFACTORING PARAMETERS ===
+# Delta rewards and STOP bonuses
+DELTA_REWARD=1
+STOP_BONUS_OK=0.5
+STOP_PENALTY_BAD=0.2
+TARGET_SIZE_K_NEW=10  # Dataset-specific target size (larger for ba2)
+
+# λ Schedules
+WARMUP_EPOCHS=5
+SCHEDULE_EPOCHS=10
+LAMBDA_SIZE_FINAL=0.01
+LAMBDA_RADIUS_FINAL=0.1
+LAMBDA_SIM_FINAL=0.01
+LAMBDA_SIM_START=0.0
+
+# Normalization
+TRAJ_REWARD_NORM=1
+STD_ADVANTAGE=1
+
+# Entropy scheduling
+ENTROPY_COEFF_START=1e-3
+ENTROPY_COEFF_END=1e-4
+
+# Debug
+PPO_DEBUG=1
+
 RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
 
 # Clean the result file before starting
@@ -239,6 +265,22 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --use_gae \
     --debug_mode "${DEBUG_MODE}" \
     --reward_norm \
+    \
+    --delta_reward "${DELTA_REWARD}" \
+    --stop_bonus_ok "${STOP_BONUS_OK}" \
+    --stop_penalty_bad "${STOP_PENALTY_BAD}" \
+    --target_size_k "${TARGET_SIZE_K_NEW}" \
+    --warmup_epochs "${WARMUP_EPOCHS}" \
+    --schedule_epochs "${SCHEDULE_EPOCHS}" \
+    --lambda_size_final "${LAMBDA_SIZE_FINAL}" \
+    --lambda_radius_final "${LAMBDA_RADIUS_FINAL}" \
+    --lambda_sim_final "${LAMBDA_SIM_FINAL}" \
+    --lambda_sim_start "${LAMBDA_SIM_START}" \
+    --traj_reward_norm "${TRAJ_REWARD_NORM}" \
+    --std_advantage "${STD_ADVANTAGE}" \
+    --entropy_coeff_start "${ENTROPY_COEFF_START}" \
+    --entropy_coeff_end "${ENTROPY_COEFF_END}" \
+    --ppo_debug \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

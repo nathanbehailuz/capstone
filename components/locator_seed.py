@@ -169,8 +169,9 @@ class Locator:
             advantages = advantages * mask
             returns = returns * mask
             
-            # Normalize advantages
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            # FIXED: Don't normalize advantages per-trajectory - this zeros out signal for short episodes
+            # Advantages should be normalized at batch level after concatenating all episodes
+            # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
             # PPO ratio & surrogate loss
             ratios = torch.exp(logps - self.old_logps.detach())

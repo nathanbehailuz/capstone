@@ -42,6 +42,30 @@ class GraphConv:
 
 
 class Agent(nn.Module):
+    
+    # STOP action ID - always the last action in the action space
+    STOP_ACTION_ID = -1  # Will be set to len(candidates) in practice
+
+
+def masked_categorical_logits(logits, valid_mask):
+    """
+    Mask logits for invalid actions by setting them to large negative values.
+    
+    Args:
+        logits: Raw logits tensor [B, A] or [A]
+        valid_mask: Boolean mask tensor [B, A] or [A] indicating valid actions
+        
+    Returns:
+        masked_logits: Logits with invalid actions masked to -1e9
+    """
+    masked = logits.masked_fill(~valid_mask, -1e9)
+    return masked
+
+
+class Agent(nn.Module):
+    
+    # STOP action ID - always the last action in the action space
+    STOP_ACTION_ID = -1  # Will be set to len(candidates) in practice
 
     def __init__(self, hidden_size, with_attr=False, attr_size=-1, norm_type=None, stop_bias=0.0):
         super().__init__()
@@ -91,7 +115,14 @@ class Agent(nn.Module):
                 node_logits = torch.log_softmax(node_scores[startpoint:candidate_endpoint], 0)  # [r-l]
                 stopping_logits = torch.log_softmax(self.stopping_score_layer(global_z), 1).squeeze(0)  # [2]
                 logits = torch.cat([node_logits + stopping_logits[0], stopping_logits[1:]], dim=0)  # [*+1]
-                batch.append([logits, value])
+                
+                # Create valid mask - all actions are valid for now (candidates + STOP)
+                valid_mask = torch.ones_like(logits, dtype=torch.bool)
+                
+                # Apply masking to ensure invalid actions have near-zero probability
+                masked_logits = masked_categorical_logits(logits, valid_mask)
+                
+                batch.append([masked_logits, value])
         batch_logits, values = zip(*batch)
         values = torch.stack(values)
         return batch_logits, values
