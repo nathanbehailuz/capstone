@@ -124,7 +124,12 @@ SIZE_REG=0.01
 SIM_REG=1.0
 RADIUS_PENALTY=0.0
 
-RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
+# Set result file name based on causal flag
+if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
+    RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
+else
+    RESULT_FILE="results/${DATASET}_ppo_seed_${SEED}.txt"
+fi
 
 echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
 

@@ -125,7 +125,12 @@ ENTROPY_COEFF_END=1e-4
 # Debug
 PPO_DEBUG=1
 
-RESULT_FILE="results/${DATASET}_${POLICY,,}_seed_${SEED}.txt"
+# Set result file name based on causal flag
+if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
+    RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
+else
+    RESULT_FILE="results/${DATASET}_ppo_seed_${SEED}.txt"
+fi
 
 # Clean the result file before starting
 > "$RESULT_FILE"
