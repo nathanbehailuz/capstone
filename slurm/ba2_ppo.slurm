@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0
+#SBATCH --array=0-9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -67,7 +67,7 @@ POLICY="PPO"
 MODEL="GNN"
 
 # Training Parameters
-N_EPOCHS=10
+N_EPOCHS=20
 N_ROLLOUTS=5
 PRETRAIN_G_BATCH_SIZE=32
 G_BATCH_SIZE=128
@@ -170,6 +170,22 @@ ENTROPY_COEFF_END=1e-4
 
 # Debug
 PPO_DEBUG=1
+
+# === Additional Hyperparameters (previously hard-coded) ===
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=10
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
 
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
@@ -286,6 +302,21 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
     --ppo_debug \
+    \
+    --value_loss_coef "${VALUE_LOSS_COEF}" \
+    --value_loss_scale "${VALUE_LOSS_SCALE}" \
+    --confidence_threshold "${CONFIDENCE_THRESHOLD}" \
+    --confidence_tolerance "${CONFIDENCE_TOLERANCE}" \
+    --causal_action_weight "${CAUSAL_ACTION_WEIGHT}" \
+    --causal_gamma "${CAUSAL_GAMMA}" \
+    --ice_score_default "${ICE_SCORE_DEFAULT}" \
+    --stop_mask_value="${STOP_MASK_VALUE}" \
+    --min_steps_before_stop "${MIN_STEPS_BEFORE_STOP}" \
+    --kl_adapt_high_multiplier "${KL_ADAPT_HIGH_MULTIPLIER}" \
+    --kl_adapt_low_multiplier "${KL_ADAPT_LOW_MULTIPLIER}" \
+    --kl_adapt_high_threshold "${KL_ADAPT_HIGH_THRESHOLD}" \
+    --kl_adapt_low_threshold "${KL_ADAPT_LOW_THRESHOLD}" \
+    --entropy_decay_fraction "${ENTROPY_DECAY_FRACTION}" \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

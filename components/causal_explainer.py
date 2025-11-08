@@ -463,9 +463,6 @@ class CausalRewardCalculator:
         """
         Compute causal-based reward for a given subgraph using TRUE causal deltas.
         
-        CRITICAL FIX: Instead of summing softmax (which always = 1.0), we compute
-        the actual causal effect of the subgraph on the model's prediction.
-        
         Args:
             graph: Original graph
             selected_nodes: List of selected nodes
@@ -543,6 +540,11 @@ class CausalRewardCalculator:
                     baseline_logp = baseline_logp.unsqueeze(0)
                 baseline_logp_c = baseline_logp[target_y]
                 
+                # Issue 5 fix: Add guard for NaN/inf in log probabilities
+                if not torch.isfinite(ctrl_logp_c) or not torch.isfinite(baseline_logp_c):
+                    print(f"[CAUSAL REWARD] Warning: Non-finite log-prob detected, returning 0.0")
+                    return 0.0
+                
                 # Causal effect: how much does subgraph improve log-prob for target class?
                 causal_delta = (ctrl_logp_c - baseline_logp_c).item()
                 
@@ -550,7 +552,12 @@ class CausalRewardCalculator:
                 pred_class = ctrl_logits.argmax(dim=-1).item()
                 correctness_bonus = 0.5 if pred_class == target_y else -0.5
                 
-                causal_reward = causal_delta + correctness_bonus
+                # Issue 7 fix: Clamp causal reward to prevent extreme values
+                causal_reward = torch.clamp(
+                    torch.tensor(causal_delta + correctness_bonus),
+                    min=-1.0,
+                    max=1.0
+                ).item()
                 
                 print(f"[CAUSAL REWARD] Subgraph: {len(selected_nodes)} nodes, {state.sum().item()} edges | "
                       f"Delta: {causal_delta:.4f}, Correct: {pred_class==target_y}, Total: {causal_reward:.4f}")

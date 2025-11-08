@@ -171,7 +171,23 @@ class Generator:
                  # Debug parameters
                  debug_mode: bool = False,
                  # Args for reward normalization
-                 args=None):
+                 args=None,
+                 # Additional hyperparameters (previously hard-coded)
+                 value_loss_coef: float = 0.3,
+                 value_loss_scale: float = 0.5,
+                 confidence_threshold: float = 0.5,
+                 confidence_tolerance: float = 0.05,
+                 causal_action_weight: float = 0.2,
+                 causal_gamma: float = 0.5,
+                 lambda_conf: float = 0.1,
+                 ice_score_default: float = -5.0,
+                 stop_mask_value: float = -1e9,
+                 min_steps_before_stop: int = 8,
+                 kl_adapt_high_multiplier: float = 2.0,
+                 kl_adapt_low_multiplier: float = 0.5,
+                 kl_adapt_high_threshold: float = 2.0,
+                 kl_adapt_low_threshold: float = 0.5,
+                 entropy_decay_fraction: float = 0.7):
         self.graph = graph
         self.model = model
         self.optimizer = optimizer
@@ -258,6 +274,23 @@ class Generator:
         
         # Store args for reward normalization
         self.args = args
+        
+        # Store additional hyperparameters (previously hard-coded)
+        self.value_loss_coef = value_loss_coef
+        self.value_loss_scale = value_loss_scale
+        self.confidence_threshold = confidence_threshold
+        self.confidence_tolerance = confidence_tolerance
+        self.causal_action_weight = causal_action_weight
+        self.causal_gamma = causal_gamma
+        self.lambda_conf = lambda_conf
+        self.ice_score_default = ice_score_default
+        self.stop_mask_value = stop_mask_value
+        self.min_steps_before_stop = min_steps_before_stop
+        self.kl_adapt_high_multiplier = kl_adapt_high_multiplier
+        self.kl_adapt_low_multiplier = kl_adapt_low_multiplier
+        self.kl_adapt_high_threshold = kl_adapt_high_threshold
+        self.kl_adapt_low_threshold = kl_adapt_low_threshold
+        self.entropy_decay_fraction = entropy_decay_fraction
 
         if device is None:
             self.device = torch.device('cpu')
@@ -283,7 +316,7 @@ class Generator:
             return
         
         # Linear decay from start to end over first 70% of epochs
-        decay_epochs = int(0.7 * total_epochs)
+        decay_epochs = int(self.entropy_decay_fraction * total_epochs)
         if epoch < decay_epochs:
             progress = epoch / decay_epochs
             self.current_entropy_coef = self.entropy_decay_start + progress * (self.entropy_decay_end - self.entropy_decay_start)
@@ -319,10 +352,10 @@ class Generator:
             return
             
         # Update KL penalty coefficient based on target
-        if approx_kl > 2.0 * self.kl_penalty_target:
-            self.kl_penalty_coef *= 2.0
-        elif approx_kl < 0.5 * self.kl_penalty_target:
-            self.kl_penalty_coef *= 0.5
+        if approx_kl > self.kl_adapt_high_threshold * self.kl_penalty_target:
+            self.kl_penalty_coef *= self.kl_adapt_high_multiplier
+        elif approx_kl < self.kl_adapt_low_threshold * self.kl_penalty_target:
+            self.kl_penalty_coef *= self.kl_adapt_low_multiplier
             
         # Clamp to reasonable range
         self.kl_penalty_coef = max(0.0, min(1.0, self.kl_penalty_coef))
@@ -484,10 +517,10 @@ class Generator:
         masked_confidence = torch.softmax(masked_pred, dim=-1).max().item()
         original_confidence = torch.softmax(original_pred, dim=-1).max().item()
         
-        # Require both class match AND reasonable confidence (>0.5) to avoid ties
+        # Require both class match AND reasonable confidence to avoid ties
         return (masked_class == original_class and 
-                masked_confidence > 0.5 and 
-                original_confidence > 0.5)
+                masked_confidence > self.confidence_threshold and 
+                original_confidence > self.confidence_threshold)
 
     def init_causal_reward_calculator(self, gnn_model):
         """
@@ -648,10 +681,10 @@ class Generator:
                         original_probs = torch.softmax(original_pred, dim=-1)
                         original_class = torch.argmax(original_pred, dim=-1).item()
                         
-                        # Check if masked prediction confidence is within 0.05 of original
+                        # Check if masked prediction confidence is within tolerance of original
                         masked_confidence = masked_probs[original_class].item()
                         original_confidence = original_probs[original_class].item()
-                        confidence_ok = masked_confidence >= (original_confidence - 0.05)
+                        confidence_ok = masked_confidence >= (original_confidence - self.confidence_tolerance)
                     
                     # FIXED: Only apply STOP bonus if ALL conditions are met
                     if class_ok and size_ok and confidence_ok:
@@ -915,7 +948,7 @@ class Generator:
         mask = mask.float()
 
         # GAE(λ) parameters
-        gamma = 0.99  # discount factor
+        gamma = self.gamma  # discount factor
         lam = self.gae_lambda    # GAE lambda parameter
         T = rewards.size(1)
         
@@ -1056,11 +1089,11 @@ class Generator:
                     # Create valid mask for this step
                     valid_mask = torch.ones_like(current_logits, dtype=torch.bool)
                     
-                    # Apply masking and compute entropy
+                    # Apply masking and compute entropy (Issue 6 fix: use dim=-1)
                     masked_logits = masked_categorical_logits(current_logits, valid_mask)
-                    probs = torch.softmax(masked_logits, dim=0)
-                    log_probs = torch.log_softmax(masked_logits, dim=0)
-                    entropy = -(probs * log_probs).sum()
+                    probs = torch.softmax(masked_logits, dim=-1)
+                    log_probs = torch.log_softmax(masked_logits, dim=-1)
+                    entropy = -(probs * log_probs).sum(dim=-1)
                     
                     # Compute current log probability of taken action
                     current_logp = log_probs[action_idx]
@@ -1110,20 +1143,15 @@ class Generator:
                 # Compute clip fraction
                 clip_frac = ((ratios > 1.0 + eps_policy) | (ratios < 1.0 - eps_policy)).float().mean().item()
                 
-                # Value loss with separate value clipping
-                eps_value = self.clip_range_value
-                value_pred_clipped = old_values_batch + torch.clamp(
-                    current_values - old_values_batch, -eps_value, eps_value
-                )
-                value_loss1 = (current_values - returns_batch) ** 2
-                value_loss2 = (value_pred_clipped - returns_batch) ** 2
-                value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
+                # Value loss without clipping (Issue 1 fix: removing redundant clipping)
+                # Keep clipping only for policy; let critic adapt freely
+                value_loss = self.value_loss_scale * torch.nn.functional.mse_loss(current_values, returns_batch.detach())
                 
                 # Entropy bonus
                 entropy_bonus = current_entropys.mean()
                 
                 # Total loss with scheduled entropy coefficient
-                loss = policy_loss + 0.3 * value_loss - entropy_coef * entropy_bonus
+                loss = policy_loss + self.value_loss_coef * value_loss - entropy_coef * entropy_bonus
                 loss.backward()
                 
                 # Gradient clipping
@@ -1244,7 +1272,7 @@ class Generator:
 
         if policy == "PPO":
             # GAE(λ) parameters
-            gamma = 0.99  # discount factor
+            gamma = self.gamma  # discount factor
             lam = self.gae_lambda    # GAE lambda parameter
             T = rewards.size(1)
             
@@ -1397,10 +1425,10 @@ class Generator:
                         masked_logits = current_logits.clone()
                         # For now, assume all actions in candidates are valid
                         # In practice, this should mask based on actual action constraints
-                        
-                        probs = torch.softmax(masked_logits, dim=0)
-                        log_probs = torch.log_softmax(masked_logits, dim=0)
-                        entropy = -(probs * log_probs).sum()
+                        # Issue 6 fix: use dim=-1 for entropy computation
+                        probs = torch.softmax(masked_logits, dim=-1)
+                        log_probs = torch.log_softmax(masked_logits, dim=-1)
+                        entropy = -(probs * log_probs).sum(dim=-1)
                         
                         # Compute current log probability of taken action
                         current_logp = log_probs[action_idx]
@@ -1456,14 +1484,9 @@ class Generator:
                     # Compute clip fraction
                     clip_frac = ((ratios > 1.0 + eps_policy) | (ratios < 1.0 - eps_policy)).float().mean().item()
                     
-                    # Value loss with separate value clipping (as in popular PPO baselines)
-                    eps_value = self.clip_range_value
-                    value_pred_clipped = old_values_batch + torch.clamp(
-                        current_values - old_values_batch, -eps_value, eps_value
-                    )
-                    value_loss1 = (current_values - returns_batch) ** 2
-                    value_loss2 = (value_pred_clipped - returns_batch) ** 2
-                    value_loss = 0.5 * torch.max(value_loss1, value_loss2).mean()
+                    # Value loss without clipping (Issue 1 fix: removing redundant clipping)
+                    # Keep clipping only for policy; let critic adapt freely
+                    value_loss = self.value_loss_scale * torch.nn.functional.mse_loss(current_values, returns_batch.detach())
                     
                     # Entropy bonus
                     entropy_bonus = current_entropys.mean()
@@ -1475,7 +1498,7 @@ class Generator:
                     
                     # Total loss with increased value loss coefficient for better critic learning
                     # FIXED: Use scheduled entropy coefficient instead of parameter
-                    loss = policy_loss + 0.3 * value_loss - self.entropy_coef * entropy_bonus + kl_penalty
+                    loss = policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_bonus + kl_penalty
                     loss.backward()
                     
                     # Gradient clipping with norm logging
@@ -1819,15 +1842,15 @@ class Generator:
                         target_classes=self.target_classes,
                         seed_nodes=self.seed_nodes,
                         ce_mode=True,
-                        gamma=0.5
+                        gamma=self.causal_gamma
                     )
             
             # Track current trajectory lengths for minimum steps guard
             self._current_trajectory_lengths = [len(traj) for traj in env.trajectories]
             
             # Action sampling with optional causal bias and minimum steps guard
-            # Use min_steps=8 for syn3 as recommended (8-10 range)
-            actions, logps, entropys = self._sample_actions_masked(batch_logits, causal_bias, min_steps_before_stop=8)
+            # Use min_steps for minimum trajectory length before allowing STOP
+            actions, logps, entropys = self._sample_actions_masked(batch_logits, causal_bias, min_steps_before_stop=self.min_steps_before_stop)
             
             # DEBUG: Track action selection and boundary violations
             if self.debug_mode:
@@ -2137,7 +2160,7 @@ class Generator:
                         if treat_edge_index.size(1) == 0:
                             # No edges means adding this candidate doesn't create connectivity
                             # Penalize this action (isolated node)
-                            ice_scores.append(-5.0)
+                            ice_scores.append(self.ice_score_default)
                             continue
                         
                         # Forward pass for treatment - use FULL node features, restricted edges
@@ -2166,8 +2189,20 @@ class Generator:
                         total_score = ice + bonus
                         ice_scores.append(total_score.item())
                 
+                    # Causal Confidence Regularizer: penalize high variance in ICE scores
+                    # This encourages consistent causal effects across actions
+                    ice_conf_penalty = 0.0
+                    if len(ice_scores) > 1:
+                        ice_var = torch.var(torch.tensor(ice_scores, dtype=torch.float32))
+                        lambda_conf = getattr(self, 'lambda_conf', 0.1)  # Default confidence penalty weight
+                        ice_conf_penalty = lambda_conf * ice_var.item()
+                    
                     # Convert to tensor and add neutral score for STOP action
                     ice_tensor = torch.tensor(ice_scores + [0.0], dtype=torch.float32, device=self.device)
+                    
+                    # Apply confidence penalty by subtracting from all scores uniformly
+                    # This encourages consistent causal effects
+                    ice_tensor = ice_tensor - ice_conf_penalty
                     
                     # Normalize to avoid extreme values
                     ice_tensor = torch.tanh(ice_tensor)  # Squash to [-1, 1]
@@ -2209,15 +2244,15 @@ class Generator:
             if current_length < min_steps_before_stop:
                 # Set STOP action logit to very negative value (effectively mask it)
                 logits = logits.clone()  # Don't modify original
-                logits[-1] = -1e9
+                logits[-1] = self.stop_mask_value
             
             # Apply causal bias if available
             if causal_bias is not None and i < len(causal_bias):
                 # Causal bias is already in [-1, 1] range (tanh applied)
                 # Scale it and add to logits (weight controlled by causal_weight during reward computation)
                 # Here we use a moderate weight for exploration
-                causal_weight_action = 0.2  # Weight for action selection bias
-                logits = logits + causal_weight_action * causal_bias[i]
+                # Issue 2 fix: Explicitly detach causal bias to prevent gradient leakage
+                logits = logits + self.causal_action_weight * causal_bias[i].detach()
             
             # Create valid mask - all actions are valid for now (candidates + STOP)
             valid_mask = torch.ones_like(logits, dtype=torch.bool)
@@ -2225,10 +2260,10 @@ class Generator:
             # Apply masking to ensure invalid actions have near-zero probability
             masked_logits = masked_categorical_logits(logits, valid_mask)
             
-            # Convert to probabilities
-            ps = torch.softmax(masked_logits, dim=0)
+            # Convert to probabilities (Issue 6 fix: use dim=-1)
+            ps = torch.softmax(masked_logits, dim=-1)
             
-            entropy = -(ps * torch.log(ps + 1e-8)).sum()
+            entropy = -(ps * torch.log(ps + 1e-8)).sum(dim=-1)
             action = torch.multinomial(ps, 1).item()
             logp = masked_logits[action]  # Use masked logits for policy gradient
             
@@ -2262,15 +2297,15 @@ class Generator:
             if current_length < min_steps_before_stop:
                 # Set STOP action logit to very negative value (effectively mask it)
                 logits = logits.clone()  # Don't modify original
-                logits[-1] = -1e9
+                logits[-1] = self.stop_mask_value
             
             # Apply causal bias if available
             if causal_bias is not None and i < len(causal_bias):
                 # Causal bias is already in [-1, 1] range (tanh applied)
                 # Scale it and add to logits (weight controlled by causal_weight during reward computation)
                 # Here we use a moderate weight for exploration
-                causal_weight_action = 0.2  # Weight for action selection bias
-                logits = logits + causal_weight_action * causal_bias[i]
+                # Issue 2 fix: Explicitly detach causal bias to prevent gradient leakage
+                logits = logits + self.causal_action_weight * causal_bias[i].detach()
             
             # Convert to probabilities
             ps = torch.softmax(logits, dim=0)

@@ -105,6 +105,7 @@ DELTA_REWARD=1
 STOP_BONUS_OK=0.5
 STOP_PENALTY_BAD=0.2
 TARGET_SIZE_K_NEW=8  # Dataset-specific target size
+REWARD_SCALE=5.0     # Global reward scaling factor to un-choke learning
 
 # λ Schedules
 WARMUP_EPOCHS=5
@@ -124,6 +125,22 @@ ENTROPY_COEFF_END=1e-4
 
 # Debug
 PPO_DEBUG=1
+
+# === Additional Hyperparameters (previously hard-coded) ===
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=8
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
 
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
@@ -172,6 +189,7 @@ echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
     --stop_bonus_ok "${STOP_BONUS_OK}" \
     --stop_penalty_bad "${STOP_PENALTY_BAD}" \
     --target_size_k "${TARGET_SIZE_K_NEW}" \
+    --reward_scale "${REWARD_SCALE}" \
     --warmup_epochs "${WARMUP_EPOCHS}" \
     --schedule_epochs "${SCHEDULE_EPOCHS}" \
     --lambda_size_final "${LAMBDA_SIZE_FINAL}" \
@@ -183,6 +201,21 @@ echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
     --ppo_debug \
+    \
+    --value_loss_coef "${VALUE_LOSS_COEF}" \
+    --value_loss_scale "${VALUE_LOSS_SCALE}" \
+    --confidence_threshold "${CONFIDENCE_THRESHOLD}" \
+    --confidence_tolerance "${CONFIDENCE_TOLERANCE}" \
+    --causal_action_weight "${CAUSAL_ACTION_WEIGHT}" \
+    --causal_gamma "${CAUSAL_GAMMA}" \
+    --ice_score_default="${ICE_SCORE_DEFAULT}" \
+    --stop_mask_value="${STOP_MASK_VALUE}" \
+    --min_steps_before_stop "${MIN_STEPS_BEFORE_STOP}" \
+    --kl_adapt_high_multiplier "${KL_ADAPT_HIGH_MULTIPLIER}" \
+    --kl_adapt_low_multiplier "${KL_ADAPT_LOW_MULTIPLIER}" \
+    --kl_adapt_high_threshold "${KL_ADAPT_HIGH_THRESHOLD}" \
+    --kl_adapt_low_threshold "${KL_ADAPT_LOW_THRESHOLD}" \
+    --entropy_decay_fraction "${ENTROPY_DECAY_FRACTION}" \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

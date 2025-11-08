@@ -1,8 +1,6 @@
 #!/bin/bash
 # File: syn1_ppo.slurm
  
-
-
 ## ===================== SLURM =====================
 #SBATCH -J rgx_syn1_ppo
 #SBATCH -p nvidia
@@ -12,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=1-9
+#SBATCH --array=0-9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -81,10 +79,10 @@ export PYTHONNOUSERSITE=1
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn1"
 POLICY="PPO"
-N_EPOCHS=10
-PPO_EPOCHS=4              # Reduced from 6 for stability
-N_ROLLOUTS=32             # Increased from 10 to compensate for shorter trajectories
-USE_CAUSAL=False
+N_EPOCHS=20
+PPO_EPOCHS=4              
+N_ROLLOUTS=32             
+USE_CAUSAL=True
 
 # Regularization - BALANCED for proper size control
 SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)
@@ -139,6 +137,21 @@ ENTROPY_COEFF_END=0.0005  # Increased from 1e-4 for sustained exploration
 # Debug
 PPO_DEBUG=1
 
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=8
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
+
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
     RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
@@ -173,6 +186,9 @@ srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
 # " | tee -a "$RESULT_FILE"
 
 ## ================== TRAINING =====================
+# Debug: print STOP_MASK_VALUE
+echo "DEBUG: STOP_MASK_VALUE='${STOP_MASK_VALUE}'" | tee -a "$RESULT_FILE"
+
 # Launch your script INSIDE the GPU step, using the env's python
 srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
   "${PYBIN}" run_RG_explainer.py \
@@ -202,7 +218,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --debug_mode "${DEBUG_MODE}" \
     --target_size_k "${TARGET_SIZE_K}" \
     --reward_norm \
-    \
     --delta_reward "${DELTA_REWARD}" \
     --stop_bonus_ok "${STOP_BONUS_OK}" \
     --stop_penalty_bad "${STOP_PENALTY_BAD}" \
@@ -219,6 +234,19 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
     --ppo_debug \
-  >> "$RESULT_FILE" 2>&1
+    --value_loss_coef "${VALUE_LOSS_COEF}" \
+    --value_loss_scale "${VALUE_LOSS_SCALE}" \
+    --confidence_threshold "${CONFIDENCE_THRESHOLD}" \
+    --confidence_tolerance "${CONFIDENCE_TOLERANCE}" \
+    --causal_action_weight "${CAUSAL_ACTION_WEIGHT}" \
+    --causal_gamma "${CAUSAL_GAMMA}" \
+    --ice_score_default="${ICE_SCORE_DEFAULT}" \
+    --stop_mask_value="${STOP_MASK_VALUE}" \
+    --min_steps_before_stop "${MIN_STEPS_BEFORE_STOP}" \
+    --kl_adapt_high_multiplier "${KL_ADAPT_HIGH_MULTIPLIER}" \
+    --kl_adapt_low_multiplier "${KL_ADAPT_LOW_MULTIPLIER}" \
+    --kl_adapt_high_threshold "${KL_ADAPT_HIGH_THRESHOLD}" \
+    --kl_adapt_low_threshold "${KL_ADAPT_LOW_THRESHOLD}" \
+    --entropy_decay_fraction "${ENTROPY_DECAY_FRACTION}" >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

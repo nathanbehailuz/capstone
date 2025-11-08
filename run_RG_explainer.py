@@ -476,7 +476,23 @@ class Runner:
                       # Debug parameters
                       debug_mode=bool(args.debug_mode),
                       # Args for reward normalization
-                      args=args)
+                      args=args,
+                      # Additional hyperparameters (previously hard-coded)
+                      value_loss_coef=args.value_loss_coef,
+                      value_loss_scale=args.value_loss_scale,
+                      confidence_threshold=args.confidence_threshold,
+                      confidence_tolerance=args.confidence_tolerance,
+                      causal_action_weight=args.causal_action_weight,
+                      causal_gamma=args.causal_gamma,
+                      lambda_conf=getattr(args, 'lambda_conf', 0.1),
+                      ice_score_default=args.ice_score_default,
+                      stop_mask_value=args.stop_mask_value,
+                      min_steps_before_stop=args.min_steps_before_stop,
+                      kl_adapt_high_multiplier=args.kl_adapt_high_multiplier,
+                      kl_adapt_low_multiplier=args.kl_adapt_low_multiplier,
+                      kl_adapt_high_threshold=args.kl_adapt_high_threshold,
+                      kl_adapt_low_threshold=args.kl_adapt_low_threshold,
+                      entropy_decay_fraction=args.entropy_decay_fraction)
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
         
@@ -647,7 +663,12 @@ class Runner:
                     edge_weights = torch.ones(g.size(1), device=g.device)
                     embed = self.trained_model.embedding(self.nodefeats, g, edge_weights)[cs[i][0]]
                     masked_embeds.append(embed)
-                sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
+                # Contrastive representation loss with cosine similarity (saturates better than L2)
+                sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
+                    masked_embeds[i].unsqueeze(0), 
+                    self.original_embeds[x[0]].unsqueeze(0), 
+                    dim=-1
+                ).squeeze() for i, x in enumerate(cs)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
             else:
                 masked_embeds = []
@@ -657,7 +678,12 @@ class Runner:
                     node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                     embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
-                sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
+                # Contrastive representation loss with cosine similarity (saturates better than L2)
+                sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
+                    masked_embeds[i].unsqueeze(0), 
+                    self.g_embeds[g_id].unsqueeze(0), 
+                    dim=-1
+                ).squeeze() for i, g_id in enumerate(batch_g_id)]
                 sim_loss = args.sim_reg * torch.stack(sim_loss)
             sim_loss = sim_loss.detach().cpu().numpy()
         else:
@@ -734,10 +760,10 @@ class Runner:
                                           edge_score_agg=self.args.edge_score_agg,
                                           debug_eval_graph=self.args.debug_eval_graph)
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
-        print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
+        # print(f"[DEBUG] Evaluation completed for {prefix}, AUC={auc_score}", flush=True)
 
         # Save edge scores to text files
-        self.save_edge_scores_to_file(edge_scores_list, prefix)
+        # self.save_edge_scores_to_file(edge_scores_list, prefix)  # Commented out to avoid printing edge scores
 
         return auc_score
 
@@ -763,15 +789,15 @@ class Runner:
         modified_lines = []
         edge_scores_idx = 0
         
-        print(f"Looking for epoch pattern: {epoch_pattern}")
-        print(f"Number of edge scores to save: {len(edge_scores_list)}")
+        # print(f"Looking for epoch pattern: {epoch_pattern}")
+        # print(f"Number of edge scores to save: {len(edge_scores_list)}")
         
         for i, line in enumerate(lines):
             modified_lines.append(line)
             
             # Check if this is an epoch marker
             if re.search(epoch_pattern, line):
-                print(f"Found epoch marker at line {i}: {line.strip()}")
+                # print(f"Found epoch marker at line {i}: {line.strip()}")
                 # Look ahead for the next lines that contain subgraph data
                 j = i + 1
                 while j < len(lines) and not re.search(r'\[EVAL-', lines[j]):
@@ -780,7 +806,7 @@ class Runner:
                     # Check if this line contains subgraph data (sgs [...])
                     # Handle different dataset formats: g_id/n_id ... sgs [...] or n_id ... sgs [...]
                     if 'sgs' in current_line and '[' in current_line and ']' in current_line:
-                        print(f"Found subgraph line at {j}: {current_line.strip()}")
+                        # print(f"Found subgraph line at {j}: {current_line.strip()}")
                         if edge_scores_idx < len(edge_scores_list):
                             edge_scores = edge_scores_list[edge_scores_idx]
                             
@@ -794,28 +820,45 @@ class Runner:
                                 
                                 # Add edge scores line after the subgraph line
                                 modified_lines.append(f"  {edge_scores_str}\n")
-                                print(f"Added edge scores: {edge_scores_str}")
+                                # print(f"Added edge scores: {edge_scores_str}")
                                 edge_scores_idx += 1
                             else:
                                 modified_lines.append("  edge_scores {}\n")
-                                print(f"Added empty edge scores")
+                                # print(f"Added empty edge scores")
                                 edge_scores_idx += 1
                         else:
-                            print(f"Warning: No more edge scores available (idx={edge_scores_idx}, total={len(edge_scores_list)})")
+                            # print(f"Warning: No more edge scores available (idx={edge_scores_idx}, total={len(edge_scores_list)})")
+                            pass
                     
                     j += 1
         
-        print(f"Processed {edge_scores_idx} edge scores out of {len(edge_scores_list)}")
+        # print(f"Processed {edge_scores_idx} edge scores out of {len(edge_scores_list)}")
         
         # Write the modified content back to the file
         try:
             with open(results_file, 'w') as f:
                 f.writelines(modified_lines)
-            print(f"Edge scores saved to {results_file}")
+            # print(f"Edge scores saved to {results_file}")
         except Exception as e:
             print(f"Error saving edge scores: {e}")
 
     def get_g_id(self, nodes, is_check=False):
+        # Handle empty nodes list
+        if len(nodes) == 0:
+            print("Warning: get_g_id called with empty nodes list, returning 0")
+            return 0
+        
+        # Check if indices are valid
+        for node_idx in nodes:
+            if node_idx >= len(self.n_to_g_index):
+                print(f"Warning: node index {node_idx} out of range for n_to_g_index (size {len(self.n_to_g_index)})")
+                print(f"Nodes list: {nodes}")
+                # Return the graph id of the first valid node, or 0 if none are valid
+                for n in nodes:
+                    if n < len(self.n_to_g_index):
+                        return self.n_to_g_index[n]
+                return 0
+        
         if is_check:
             # check whether nodes belong to one graph
             flag_check = True
@@ -852,10 +895,25 @@ class Runner:
         if self.task == "node_task":
             return ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)[0]
         else:
-            return ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)[0]
+            # For graph tasks, extract subgraph from global edge index
+            edge_idx, _ = ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)
+            return edge_idx
 
     def score_fn(self, cs):
         cs = [x[:-1] if x[-1] == 'EOS' else x for x in cs]
+        
+        # Filter out empty node lists and warn about them
+        original_len = len(cs)
+        cs_with_idx = [(i, x) for i, x in enumerate(cs) if len(x) > 0]
+        if len(cs_with_idx) < original_len:
+            print(f"Warning: {original_len - len(cs_with_idx)} empty subgraphs detected and filtered out")
+        
+        if len(cs_with_idx) == 0:
+            print("Warning: All subgraphs are empty! Returning zero rewards.")
+            return torch.zeros(original_len, device=self.device)
+        
+        indices, cs = zip(*cs_with_idx) if cs_with_idx else ([], [])
+        cs = list(cs)
         batch_g = [self.prepare_graph(i, x) for i, x in enumerate(cs)]
         
         # Prediction loss
@@ -869,10 +927,53 @@ class Runner:
         else:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
             masked_preds = []
-            for g_id, g in zip(batch_g_id, batch_g):
+            for idx, (g_id, g, nodes) in enumerate(zip(batch_g_id, batch_g, cs)):
+                # Adjust edge indices to local coordinates
                 edge_idx = g - self.each_g_start_nid[g_id]
-                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
-                node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                
+                # Validate edge indices are non-negative and within bounds
+                if edge_idx.numel() > 0:
+                    min_idx = edge_idx.min().item()
+                    max_idx = edge_idx.max().item()
+                    num_nodes = self.ind_nodefeats[g_id].size(0)
+                    
+                    if min_idx < 0:
+                        print(f"Warning: Negative edge index {min_idx} detected for g_id={g_id}, subgraph {idx}")
+                        print(f"  Edge index range before adjustment: [{g.min().item()}, {g.max().item()}]")
+                        print(f"  Graph start node ID: {self.each_g_start_nid[g_id]}")
+                        print(f"  Nodes in subgraph: {nodes}")
+                        print(f"  Node graph IDs: {[self.n_to_g_index[n] for n in nodes if n < len(self.n_to_g_index)]}")
+                        # Clamp to valid range
+                        edge_idx = torch.clamp(edge_idx, min=0, max=num_nodes-1)
+                        max_idx = edge_idx.max().item()
+                    
+                    if max_idx >= num_nodes:
+                        print(f"Warning: Edge index {max_idx} exceeds num_nodes {num_nodes} for g_id={g_id}, subgraph {idx}")
+                        print(f"  Edge index range: [{edge_idx.min().item()}, {max_idx}]")
+                        print(f"  Nodes in subgraph: {nodes}")
+                        print(f"  Node graph IDs: {[self.n_to_g_index[n] for n in nodes if n < len(self.n_to_g_index)]}")
+                        # Clamp to valid range
+                        edge_idx = torch.clamp(edge_idx, min=0, max=num_nodes-1)
+                
+                # Handle empty edge indices (isolated nodes)
+                if edge_idx.size(1) == 0:
+                    print(f"Warning: Empty edge index for g_id={g_id}, subgraph {idx} (isolated nodes)")
+                    # For graphs with no edges, just get single node features
+                    node_feats = self.ind_nodefeats[g_id][:1]
+                    edge_weights = torch.ones(0, dtype=torch.float32, device=edge_idx.device)
+                else:
+                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
+                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
+                    
+                    # Additional validation: ensure node_feats size matches max edge index
+                    required_nodes = edge_idx.max().item() + 1
+                    if node_feats.size(0) < required_nodes:
+                        print(f"Warning: Insufficient node features. Have {node_feats.size(0)}, need {required_nodes}")
+                        # Pad with zeros if needed
+                        padding = torch.zeros(required_nodes - node_feats.size(0), node_feats.size(1), 
+                                            device=node_feats.device, dtype=node_feats.dtype)
+                        node_feats = torch.cat([node_feats, padding], dim=0)
+                
                 pred = self.trained_model(node_feats, edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
@@ -973,7 +1074,12 @@ class Runner:
                     edge_weights = torch.ones(g.size(1), device=g.device)
                     embed = self.trained_model.embedding(self.nodefeats, g, edge_weights)[cs[i][0]]
                     masked_embeds.append(embed)
-                sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
+                # Contrastive representation loss with cosine similarity (saturates better than L2)
+                sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
+                    masked_embeds[i].unsqueeze(0), 
+                    self.original_embeds[x[0]].unsqueeze(0), 
+                    dim=-1
+                ).squeeze() for i, x in enumerate(cs)]
             else:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
@@ -982,7 +1088,12 @@ class Runner:
                     node_feats = self.get_node_features_for_edges(g_id, edge_idx)
                     embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
                     masked_embeds.append(embed)
-                sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
+                # Contrastive representation loss with cosine similarity (saturates better than L2)
+                sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
+                    masked_embeds[i].unsqueeze(0), 
+                    self.g_embeds[g_id].unsqueeze(0), 
+                    dim=-1
+                ).squeeze() for i, g_id in enumerate(batch_g_id)]
             v += args.sim_reg * torch.stack(sim_loss) 
         
         # ========== CAUSAL MECHANISM INTEGRATION ==========
@@ -1045,10 +1156,25 @@ class Runner:
                 print(f"[CAUSAL] Original scores: {np.mean(original_scores):.4f}, Causal scores: {np.mean(causal_scores):.4f}, Combined: {np.mean(combined_scores):.4f}")
             else:
                 combined_scores = -v.detach().cpu().numpy()
+            
+            # If we filtered out empty subgraphs, reconstruct full result with zeros for empty ones
+            if len(combined_scores) < original_len:
+                full_scores = np.zeros(original_len)
+                for orig_idx, score in zip(indices, combined_scores):
+                    full_scores[orig_idx] = score
+                return full_scores
 
             return combined_scores
         
-        return -v.detach().cpu().numpy()
+        # If we filtered out empty subgraphs, reconstruct full result with zeros for empty ones
+        scores = -v.detach().cpu().numpy()
+        if len(scores) < original_len:
+            full_scores = np.zeros(original_len)
+            for orig_idx, score in zip(indices, scores):
+                full_scores[orig_idx] = score
+            return full_scores
+        
+        return scores
 
 
     def save(self, fname):
@@ -1565,6 +1691,7 @@ if __name__ == '__main__':
     parser.add_argument("--lambda_radius_final", type=float, default=0.10, help="Final radius penalty weight.")
     parser.add_argument("--lambda_sim_start", type=float, default=0.0, help="Starting similarity penalty weight.")
     parser.add_argument("--lambda_sim_final", type=float, default=0.005, help="Final similarity penalty weight.")
+    parser.add_argument("--lambda_conf", type=float, default=0.1, help="Causal confidence penalty weight (penalizes ICE score variance).")
     parser.add_argument("--traj_reward_norm", type=int, default=1, help="Normalize rewards per trajectory.")
     parser.add_argument("--std_advantage", type=int, default=1, help="Standardize advantages per batch.")
     parser.add_argument("--clip_range_value", type=float, default=0.25, help="Value function clipping range.")
@@ -1572,6 +1699,22 @@ if __name__ == '__main__':
     # === Debug ===
     parser.add_argument("--ppo_debug", action='store_true', default=False, help="Enable PPO debug logging")
     parser.add_argument("--dry_run_debug", action='store_true', default=False, help="Run single epoch debug mode")
+
+    # === Additional Hyperparameters (previously hard-coded) ===
+    parser.add_argument("--value_loss_coef", type=float, default=0.3, help="Coefficient for value loss in total loss")
+    parser.add_argument("--value_loss_scale", type=float, default=0.5, help="Scale factor for value loss computation")
+    parser.add_argument("--confidence_threshold", type=float, default=0.5, help="Minimum confidence threshold for class preservation check")
+    parser.add_argument("--confidence_tolerance", type=float, default=0.05, help="Confidence tolerance for STOP reward")
+    parser.add_argument("--causal_action_weight", type=float, default=0.2, help="Weight for causal bias in action selection")
+    parser.add_argument("--causal_gamma", type=float, default=0.5, help="Gamma parameter for causal computation")
+    parser.add_argument("--ice_score_default", type=float, default=-5.0, help="Default ICE score for invalid/isolated nodes")
+    parser.add_argument("--stop_mask_value", type=float, default=-1e9, help="Large negative value to mask STOP action")
+    parser.add_argument("--min_steps_before_stop", type=int, default=8, help="Minimum trajectory steps before STOP action is allowed")
+    parser.add_argument("--kl_adapt_high_multiplier", type=float, default=2.0, help="Multiplier when KL is too high")
+    parser.add_argument("--kl_adapt_low_multiplier", type=float, default=0.5, help="Multiplier when KL is too low")
+    parser.add_argument("--kl_adapt_high_threshold", type=float, default=2.0, help="Threshold multiplier for high KL")
+    parser.add_argument("--kl_adapt_low_threshold", type=float, default=0.5, help="Threshold multiplier for low KL")
+    parser.add_argument("--entropy_decay_fraction", type=float, default=0.7, help="Fraction of epochs for entropy decay (0.7 = 70%)")
 
     args = parser.parse_args()
     
