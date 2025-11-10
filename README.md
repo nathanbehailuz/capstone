@@ -56,6 +56,20 @@ capstone/
 - PyTorch Geometric
 - CUDA (for GPU acceleration)
 
+### Recommended Packages
+
+For improved performance, install the following optional packages:
+
+```bash
+# Accelerate scatter operations (recommended)
+pip install torch-scatter -f https://data.pyg.org/whl/torch-${TORCH}+${CUDA}.html
+
+# Replace ${TORCH} with your PyTorch version (e.g., 1.13.0)
+# Replace ${CUDA} with your CUDA version (e.g., cu117 for CUDA 11.7, cpu for CPU-only)
+```
+
+**Note**: Without `torch-scatter`, you may see a warning about scatter operations, but the code will still work with a fallback implementation.
+
 
 ## Quick Start
 

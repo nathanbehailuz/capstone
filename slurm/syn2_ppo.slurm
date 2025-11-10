@@ -69,7 +69,7 @@ SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn2"
 POLICY="PPO"
 N_EPOCHS=50
-PPO_EPOCHS=6
+PPO_EPOCHS=8
 N_ROLLOUTS=10
 USE_CAUSAL=False
 
@@ -79,17 +79,17 @@ SIM_REG=1.0          # Increased 10x: was 0.001 (need stronger similarity)
 RADIUS_PENALTY=0.1   # Increased 10x: was 0.01 (need radius control)
 
 # Learning rate - Higher for value function learning
-LR=0.0003            # Increased 3x: was 0.0001 default (value function needs faster learning)
+LR=0.0005            # Increased to 0.0005 for stronger value function learning
 
 # Causal mechanism - FULL IMPLEMENTATION with CE-difference
 CAUSAL_WEIGHT=0.3   # Moderate weight with warmup (0.05-0.2 range)
-CAUSAL_WARMUP=0     # Longer warmup for stability (15-25 epochs)
+CAUSAL_WARMUP=10    # Longer warmup for stability
 
 # Size targets - Enable proper size control
 TARGET_SIZE_K=10     # Target size closer to ground truth (11-13 nodes)
 LAMBDA_SIZE=0.5      # Enable hinge loss for size control
 LAMBDA_RADIUS=0.5    # Enable adaptive radius penalty
-STEP_COST=0.01       # Enable step cost to encourage efficiency
+STEP_COST=0.05       # Increased 5x: stronger step cost to encourage efficiency
 
 # Fidelity threshold - DISABLE artificial bonuses
 FIDELITY_THRESH=0.0  # Disable EXTREME bonuses (causing value explosion)
@@ -102,33 +102,33 @@ REWARD_NORM=1
 # === NEW PPO REFACTORING PARAMETERS ===
 # Delta rewards and STOP bonuses
 DELTA_REWARD=1
-STOP_BONUS_OK=0.5
-STOP_PENALTY_BAD=0.2
-TARGET_SIZE_K_NEW=8  # Dataset-specific target size
-REWARD_SCALE=5.0     # Global reward scaling factor to un-choke learning
+STOP_BONUS_OK=1.0       # Increased 2x: stronger reward for good stops
+STOP_PENALTY_BAD=0.5    # Increased 2.5x: stronger penalty for bad stops
+TARGET_SIZE_K_NEW=8     # Dataset-specific target size
+REWARD_SCALE=10.0       # Increased 2x: stronger learning signal
 
 # λ Schedules
-WARMUP_EPOCHS=5
-SCHEDULE_EPOCHS=10
-LAMBDA_SIZE_FINAL=0.01
-LAMBDA_RADIUS_FINAL=0.1
+WARMUP_EPOCHS=10           # Increased 2x: longer warmup period
+SCHEDULE_EPOCHS=20         # Increased 2x: slower transition
+LAMBDA_SIZE_FINAL=0.1      # Increased 10x: much stronger size penalty
+LAMBDA_RADIUS_FINAL=0.3    # Increased 3x: stronger radius control
 LAMBDA_SIM_FINAL=0.01
-LAMBDA_SIM_START=0.0
+LAMBDA_SIM_START=0.001     # Start from small non-zero value
 
 # Normalization
 TRAJ_REWARD_NORM=1
 STD_ADVANTAGE=1
 
 # Entropy scheduling
-ENTROPY_COEFF_START=1e-3
-ENTROPY_COEFF_END=1e-4
+ENTROPY_COEFF_START=0.01    # Increased 10x: maintain more exploration
+ENTROPY_COEFF_END=0.001     # Increased 10x: prevent premature collapse
 
 # Debug
 PPO_DEBUG=1
 
 # === Additional Hyperparameters (previously hard-coded) ===
-VALUE_LOSS_COEF=0.3
-VALUE_LOSS_SCALE=0.5
+VALUE_LOSS_COEF=0.8        # Increased from 0.3: prioritize value function learning
+VALUE_LOSS_SCALE=1.0       # Increased from 0.5: full value loss weight
 CONFIDENCE_THRESHOLD=0.5
 CONFIDENCE_TOLERANCE=0.05
 CAUSAL_ACTION_WEIGHT=0.2
@@ -140,7 +140,7 @@ KL_ADAPT_HIGH_MULTIPLIER=2.0
 KL_ADAPT_LOW_MULTIPLIER=0.5
 KL_ADAPT_HIGH_THRESHOLD=2.0
 KL_ADAPT_LOW_THRESHOLD=0.5
-ENTROPY_DECAY_FRACTION=0.7
+ENTROPY_DECAY_FRACTION=0.8  # Increased from 0.7: slower entropy decay
 
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
@@ -174,11 +174,11 @@ echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
   --step_cost "${STEP_COST}" \
   --use_causal "${USE_CAUSAL}" \
   --clip_range_policy 0.2 \
-  --clip_range_value 0.5 \
+  --clip_range_value 0.3 \
   --kl_target 0.025 \
   --adaptive_kl_penalty \
-  --entropy_decay_start 0.001 \
-  --entropy_decay_end 0.0005 \
+  --entropy_decay_start 0.01 \
+  --entropy_decay_end 0.001 \
   --fidelity_thresh "${FIDELITY_THRESH}" \
   --max_size "${MAX_SIZE}" \
   --debug_mode "${DEBUG_MODE}" \

@@ -82,7 +82,7 @@ POLICY="PPO"
 N_EPOCHS=30
 PPO_EPOCHS=6
 N_ROLLOUTS=10
-USE_CAUSAL=True
+USE_CAUSAL=False
 
 # Regularization - BALANCED for proper size control
 # SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)

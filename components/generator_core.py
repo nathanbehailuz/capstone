@@ -35,8 +35,11 @@ class GraphConv:
     def _normalize_adj(adj: sp.spmatrix) -> sp.spmatrix:
         """Symmetrically normalize adjacency matrix."""
         rowsum = np.array(adj.sum(1))
-        d_inv_sqrt = np.power(rowsum, -0.5).flatten()
-        d_inv_sqrt[np.isinf(d_inv_sqrt)] = 0.
+        # Suppress divide by zero warnings by using np.where to handle zeros before power operation
+        with np.errstate(divide='ignore', invalid='ignore'):
+            d_inv_sqrt = np.power(rowsum, -0.5).flatten()
+        # Set infinite and NaN values to 0 (handles isolated nodes)
+        d_inv_sqrt[np.isinf(d_inv_sqrt) | np.isnan(d_inv_sqrt)] = 0.
         d_mat_inv_sqrt = sp.diags(d_inv_sqrt)
         return adj.dot(d_mat_inv_sqrt).transpose().dot(d_mat_inv_sqrt)
 

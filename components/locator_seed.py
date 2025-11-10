@@ -33,16 +33,37 @@ class Locator:
         self.optimizer = optim.Adam(self.model.parameters(), lr= d_lr)
         self.sgs = sgs
 
+        # Build logit embeddings only for non-isolated nodes
+        # Keep track of which nodes in each subgraph have embeddings
         self.logit_embeds = []
+        self.sg_node_to_embed_idx = []  # Maps node position in sg to embedding index
         offset = 0
-        for i, sg in enumerate(self.sgs):
-            tn = n_embeds[offset:offset+len(sg),:]
-            tg = g_embeds[i]
-            tg = tg.repeat(tn.size(0), 1)
-            self.logit_embeds.append(torch.cat((tg, tn),1))
-            offset += len(sg)
         
-        self.logit_embeds = torch.cat(self.logit_embeds).to(self.device).detach()
+        for i, sg in enumerate(self.sgs):
+            # Count non-isolated nodes in this subgraph
+            non_isolated_count = sum(1 for node in sg if node not in self.isolated_nodes)
+            
+            if non_isolated_count > 0:
+                # Get embeddings only for non-isolated nodes
+                tn = n_embeds[offset:offset+non_isolated_count, :]
+                tg = g_embeds[i]
+                tg = tg.repeat(tn.size(0), 1)
+                self.logit_embeds.append(torch.cat((tg, tn), 1))
+                offset += non_isolated_count
+            
+            # Create mapping from node position to embedding index
+            # Isolated nodes will have index -1 (no embedding)
+            node_mapping = []
+            embed_idx = 0
+            for node in sg:
+                if node not in self.isolated_nodes:
+                    node_mapping.append(embed_idx)
+                    embed_idx += 1
+                else:
+                    node_mapping.append(-1)
+            self.sg_node_to_embed_idx.append(node_mapping)
+        
+        self.logit_embeds = torch.cat(self.logit_embeds).to(self.device).detach() if self.logit_embeds else torch.empty(0, feat_dim).to(self.device)
         
 
 
@@ -69,16 +90,29 @@ class Locator:
                 part_generated_sgs = [x[:-1] if x[-1] == 'EOS' else x for x in fn(nonisolated_nodes)]
 
                 generated_sgs = []
-                i = 0
+                non_iso_idx = 0
                 for n_id in nodes:
                     if n_id not in self.isolated_nodes:
-                        generated_sgs.append(part_generated_sgs[i])
-                        i+=1
+                        generated_sgs.append(part_generated_sgs[non_iso_idx])
+                        non_iso_idx += 1
                     else:
                         generated_sgs.append([n_id])
 
                 rewards = score_fn(generated_sgs)
+                # Ensure rewards is a numpy array (score_fn might return tensor in some cases)
+                if isinstance(rewards, torch.Tensor):
+                    rewards = rewards.detach().cpu().numpy()
                 rewards = torch.from_numpy(rewards).float().to(self.device)
+                
+                # Verify that rewards tensor has the same size as nodes
+                if len(rewards) != len(nodes):
+                    # This should not happen if score_fn is correctly implemented
+                    # but we handle it as a safety measure
+                    print(f"Warning: rewards size {len(rewards)} != nodes size {len(nodes)}. Padding rewards.")
+                    full_rewards = torch.zeros(len(nodes), device=self.device)
+                    full_rewards[:len(rewards)] = rewards
+                    rewards = full_rewards
+                
                 all_rewards.append(nn.Softmax(dim=0)(rewards))
                 all_reward_label.append(torch.argmax(rewards).item())
         
@@ -92,11 +126,41 @@ class Locator:
             r_i = 0
             for j in range(len(self.sgs)):
                 if selected_sg[j]:
-                    softmax_logits = nn.Softmax(dim=0)(logits[offset:offset+len(self.sgs[j])])
+                    # Count non-isolated nodes for this subgraph
+                    non_isolated_count = sum(1 for node in self.sgs[j] if node not in self.isolated_nodes)
+                    
+                    if non_isolated_count > 0:
+                        # Get logits for non-isolated nodes
+                        sg_logits = logits[offset:offset+non_isolated_count]
+                        
+                        # Create full logits tensor including isolated nodes
+                        # Assign very low logits to isolated nodes so they won't be selected
+                        full_logits = torch.full((len(self.sgs[j]),), -10.0, device=self.device)
+                        non_iso_idx = 0
+                        for node_idx, node in enumerate(self.sgs[j]):
+                            if node not in self.isolated_nodes:
+                                full_logits[node_idx] = sg_logits[non_iso_idx]
+                                non_iso_idx += 1
+                        
+                        softmax_logits = nn.Softmax(dim=0)(full_logits)
+                    else:
+                        # All nodes are isolated - uniform distribution
+                        softmax_logits = torch.ones(len(self.sgs[j]), device=self.device) / len(self.sgs[j])
+                    
+                    # Verify tensor sizes match before computing KL divergence
+                    if softmax_logits.size(0) != all_rewards[r_i].size(0):
+                        raise ValueError(
+                            f"Tensor size mismatch at subgraph {j}: "
+                            f"softmax_logits has {softmax_logits.size(0)} elements, "
+                            f"all_rewards[{r_i}] has {all_rewards[r_i].size(0)} elements. "
+                            f"Subgraph has {len(self.sgs[j])} nodes."
+                        )
+                    
                     loss += self.pretrain_loss_func(softmax_logits, all_rewards[r_i])
                     r_i += 1
 
-                offset += len(self.sgs[j])
+                # Move offset only by non-isolated nodes
+                offset += sum(1 for node in self.sgs[j] if node not in self.isolated_nodes)
             
             self.optimizer.zero_grad()
             loss.backward()
@@ -115,8 +179,27 @@ class Locator:
         seeds = []
         logps = []
         for sg in self.sgs:
-            logits = torch.log_softmax(all_logits[offset:offset+len(sg)], 0)
-            offset += len(sg)
+            # Count non-isolated nodes
+            non_isolated_count = sum(1 for node in sg if node not in self.isolated_nodes)
+            
+            if non_isolated_count > 0:
+                # Get logits for non-isolated nodes
+                sg_logits = all_logits[offset:offset+non_isolated_count]
+                
+                # Create full logits tensor including isolated nodes
+                full_logits = torch.full((len(sg),), -10.0, device=self.device)
+                non_iso_idx = 0
+                for node_idx, node in enumerate(sg):
+                    if node not in self.isolated_nodes:
+                        full_logits[node_idx] = sg_logits[non_iso_idx]
+                        non_iso_idx += 1
+                
+                logits = torch.log_softmax(full_logits, 0)
+            else:
+                # All nodes are isolated - uniform distribution
+                logits = torch.log(torch.ones(len(sg), device=self.device) / len(sg))
+            
+            offset += non_isolated_count
             ps = torch.exp(logits.detach())
             seed_idx = torch.multinomial(ps, 1).item()
             seeds.append(sg[seed_idx])
@@ -217,8 +300,27 @@ class Locator:
             offset = 0
             seeds = []
             for sg in self.sgs:
-                logits = torch.log_softmax(all_logits[offset:offset+len(sg)], 0)
-                offset += len(sg)
+                # Count non-isolated nodes
+                non_isolated_count = sum(1 for node in sg if node not in self.isolated_nodes)
+                
+                if non_isolated_count > 0:
+                    # Get logits for non-isolated nodes
+                    sg_logits = all_logits[offset:offset+non_isolated_count]
+                    
+                    # Create full logits tensor including isolated nodes
+                    full_logits = torch.full((len(sg),), -10.0, device=self.device)
+                    non_iso_idx = 0
+                    for node_idx, node in enumerate(sg):
+                        if node not in self.isolated_nodes:
+                            full_logits[node_idx] = sg_logits[non_iso_idx]
+                            non_iso_idx += 1
+                    
+                    logits = torch.log_softmax(full_logits, 0)
+                else:
+                    # All nodes are isolated - uniform distribution
+                    logits = torch.log(torch.ones(len(sg), device=self.device) / len(sg))
+                
+                offset += non_isolated_count
                 ps = torch.exp(logits.detach())
                 seed_idx = torch.multinomial(ps, 1).item()
                 seeds.append(sg[seed_idx])
@@ -235,8 +337,27 @@ class Locator:
             offset = 0
             seeds = []
             for sg in self.sgs:
-                logits = torch.log_softmax(all_logits[offset:offset+len(sg)], 0)
-                offset += len(sg)
+                # Count non-isolated nodes
+                non_isolated_count = sum(1 for node in sg if node not in self.isolated_nodes)
+                
+                if non_isolated_count > 0:
+                    # Get logits for non-isolated nodes
+                    sg_logits = all_logits[offset:offset+non_isolated_count]
+                    
+                    # Create full logits tensor including isolated nodes
+                    full_logits = torch.full((len(sg),), -10.0, device=self.device)
+                    non_iso_idx = 0
+                    for node_idx, node in enumerate(sg):
+                        if node not in self.isolated_nodes:
+                            full_logits[node_idx] = sg_logits[non_iso_idx]
+                            non_iso_idx += 1
+                    
+                    logits = torch.log_softmax(full_logits, 0)
+                else:
+                    # All nodes are isolated - uniform distribution
+                    logits = torch.log(torch.ones(len(sg), device=self.device) / len(sg))
+                
+                offset += non_isolated_count
 
                 seed_id_sort = torch.argsort(logits.detach(), descending=True)
                 flag = False

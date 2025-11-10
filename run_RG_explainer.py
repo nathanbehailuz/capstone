@@ -133,6 +133,9 @@ class Runner:
     def __init__(self, args):
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.args = args
+        # Track empty edge index warnings to avoid flooding logs
+        self.empty_edge_warnings = {}  # {g_id: count}
+        self.empty_edge_warning_limit = 3  # Only print first 3 warnings per graph
         # Load Dataset
         self.graphs, self.nodefeats, ground_truth_labels, self.task = self.load_data()
         # Move nodefeats to GPU
@@ -301,17 +304,16 @@ class Runner:
                 g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
 
-            # node embedding
+            # node embedding - use ALL node features (not just those in edges) to match old behavior
             n_embeds = []
             for i in range(len(each_g_start_nid)):
                 edge_idx = self.graphs.edge_index[:, each_g_start_eid[i]:each_g_start_eid[i+1]] - each_g_start_nid[i]
-                
-                node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 edge_weights = edge_weights_template[:edge_idx.size(1)]
-                temp = self.trained_model.embedding(node_feats_subset, edge_idx, edge_weights)
-                # Only keep embeddings for nodes that will be used
-                n_embeds.append(temp[0:min(temp.size(0), len(new_graphs_node[i]))])
-            n_embeds = torch.cat(n_embeds)
+                # Use all node features for this graph (like old version)
+                temp = self.trained_model.embedding(self.ind_nodefeats[i], edge_idx, edge_weights)
+                # Take exactly the number of nodes in this graph
+                n_embeds.append(temp[0:len(new_graphs_node[i])])
+            n_embeds = torch.cat(n_embeds, dim=0)
 
             # isolated nodes
             # total_isolated_nodefeats = []
@@ -596,11 +598,40 @@ class Runner:
         else:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
             masked_preds = []
-            for g_id, g in zip(batch_g_id, batch_g):
+            for idx, (g_id, g, nodes) in enumerate(zip(batch_g_id, batch_g, cs)):
+                # Validate that all nodes belong to g_id
+                if len(nodes) > 0:
+                    node_min = min(nodes)
+                    node_max = max(nodes)
+                    expected_min = self.each_g_start_nid[g_id]
+                    expected_max = self.each_g_start_nid[g_id + 1] if (g_id + 1) < len(self.each_g_start_nid) else len(self.n_to_g_index)
+                    
+                    print(f"[DEBUG {idx}] g_id={g_id}, nodes range=[{node_min},{node_max}], expected=[{expected_min},{expected_max})")
+                    print(f"[DEBUG {idx}] g shape={g.shape}, g min={g.min().item() if g.numel() > 0 else 'N/A'}, g max={g.max().item() if g.numel() > 0 else 'N/A'}")
+                    print(f"[DEBUG {idx}] num_nodes in graph g_id={g_id}: {self.ind_nodefeats[g_id].size(0)}")
+                
+                # Convert edge indices from global to local coordinates
                 edge_idx = g - self.each_g_start_nid[g_id]
+                
+                if edge_idx.numel() > 0:
+                    print(f"[DEBUG {idx}] After subtraction: edge_idx min={edge_idx.min().item()}, max={edge_idx.max().item()}")
+                    
+                    # Check for invalid indices
+                    if edge_idx.min() < 0:
+                        print(f"[ERROR {idx}] NEGATIVE indices detected!")
+                        print(f"[ERROR {idx}] g values: {g[:, :5] if g.size(1) > 5 else g}")
+                        print(f"[ERROR {idx}] start_nid: {self.each_g_start_nid[g_id]}")
+                        # Clamp to valid range
+                        edge_idx = torch.clamp(edge_idx, min=0)
+                    
+                    if edge_idx.max() >= self.ind_nodefeats[g_id].size(0):
+                        print(f"[ERROR {idx}] OUT OF BOUNDS indices detected!")
+                        print(f"[ERROR {idx}] max index: {edge_idx.max().item()}, num_nodes: {self.ind_nodefeats[g_id].size(0)}")
+                        # Clamp to valid range
+                        edge_idx = torch.clamp(edge_idx, max=self.ind_nodefeats[g_id].size(0) - 1)
+                
                 edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
-                node_feats = self.get_node_features_for_edges(g_id, edge_idx)
-                pred = self.trained_model(node_feats, edge_idx, edge_weights)
+                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
         
@@ -674,9 +705,18 @@ class Runner:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g - self.each_g_start_nid[g_id]
+                    
+                    # Clamp edge indices to valid range (same as prediction section)
+                    if edge_idx.numel() > 0:
+                        if edge_idx.min() < 0:
+                            print(f"[WARN sim_loss] Clamping negative indices for g_id={g_id}")
+                            edge_idx = torch.clamp(edge_idx, min=0)
+                        if edge_idx.max() >= self.ind_nodefeats[g_id].size(0):
+                            print(f"[WARN sim_loss] Clamping out-of-bounds indices for g_id={g_id}: max={edge_idx.max().item()}, num_nodes={self.ind_nodefeats[g_id].size(0)}")
+                            edge_idx = torch.clamp(edge_idx, max=self.ind_nodefeats[g_id].size(0) - 1)
+                    
                     edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
-                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
-                    embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)[0].squeeze(0)
                     masked_embeds.append(embed)
                 # Contrastive representation loss with cosine similarity (saturates better than L2)
                 sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
@@ -694,6 +734,19 @@ class Runner:
 
     def evaluate_and_print(self, prefix=''):
         print(f"[DEBUG] Starting evaluation for {prefix}", flush=True)
+        print(f"[DEBUG] eval_seeds: {self.eval_seeds[:10] if isinstance(self.eval_seeds, (list, np.ndarray)) and len(self.eval_seeds) > 10 else self.eval_seeds}", flush=True)
+        
+        # n_to_g_index only exists for graph tasks
+        if hasattr(self, 'n_to_g_index'):
+            print(f"[DEBUG] n_to_g_index length: {len(self.n_to_g_index)}", flush=True)
+            print(f"[DEBUG] Valid node range: [0, {len(self.n_to_g_index) - 1}]", flush=True)
+            
+            # Check if any eval_seeds are out of range
+            if isinstance(self.eval_seeds, (list, np.ndarray)):
+                invalid_seeds = [s for s in self.eval_seeds if s >= len(self.n_to_g_index)]
+                if invalid_seeds:
+                    print(f"[ERROR] Found {len(invalid_seeds)} invalid eval_seeds out of {len(self.eval_seeds)} total!", flush=True)
+                    print(f"[ERROR] Sample invalid seeds: {invalid_seeds[:5]}", flush=True)
 
         pred_sgs = self.g.generate(self.eval_seeds)
         p_loss, s_loss, sim_loss, r_p = self.eval_loss(pred_sgs)
@@ -845,18 +898,22 @@ class Runner:
     def get_g_id(self, nodes, is_check=False):
         # Handle empty nodes list
         if len(nodes) == 0:
-            print("Warning: get_g_id called with empty nodes list, returning 0")
+            print(f"[ERROR] get_g_id called with empty nodes list, returning 0")
             return 0
         
         # Check if indices are valid
+        max_valid_node = len(self.n_to_g_index) - 1
         for node_idx in nodes:
             if node_idx >= len(self.n_to_g_index):
-                print(f"Warning: node index {node_idx} out of range for n_to_g_index (size {len(self.n_to_g_index)})")
-                print(f"Nodes list: {nodes}")
+                print(f"[ERROR] Node {node_idx} out of range! Valid range: [0, {max_valid_node}]")
+                print(f"[ERROR] Nodes list: {nodes[:20]}{'...' if len(nodes) > 20 else ''}")
+                print(f"[ERROR] This indicates the generator is producing invalid node IDs!")
                 # Return the graph id of the first valid node, or 0 if none are valid
                 for n in nodes:
                     if n < len(self.n_to_g_index):
+                        print(f"[ERROR] Using first valid node {n} with g_id={self.n_to_g_index[n]}")
                         return self.n_to_g_index[n]
+                print(f"[ERROR] NO VALID NODES FOUND! Returning g_id=0 as fallback (INCORRECT!)")
                 return 0
         
         if is_check:
@@ -867,7 +924,8 @@ class Runner:
                     flag_check = False
                     break
             if flag_check == False:
-                print("Nodes do not belong to one graph!")
+                print(f"[ERROR] Nodes do not belong to one graph!")
+                print(f"[ERROR] Node g_ids: {[self.n_to_g_index[n] for n in nodes[:10]]}")
 
         return self.n_to_g_index[nodes[0]]
     
@@ -896,6 +954,7 @@ class Runner:
             return ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)[0]
         else:
             # For graph tasks, extract subgraph from global edge index
+            # Return edges in GLOBAL coordinates (will be converted to local later)
             edge_idx, _ = ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)
             return edge_idx
 
@@ -906,11 +965,15 @@ class Runner:
         original_len = len(cs)
         cs_with_idx = [(i, x) for i, x in enumerate(cs) if len(x) > 0]
         if len(cs_with_idx) < original_len:
-            print(f"Warning: {original_len - len(cs_with_idx)} empty subgraphs detected and filtered out")
+            # Suppress warnings for mutag dataset
+            if self.args.dataset != 'mutag':
+                print(f"Warning: {original_len - len(cs_with_idx)} empty subgraphs detected and filtered out")
         
         if len(cs_with_idx) == 0:
-            print("Warning: All subgraphs are empty! Returning zero rewards.")
-            return torch.zeros(original_len, device=self.device)
+            # Suppress warnings for mutag dataset
+            if self.args.dataset != 'mutag':
+                print("Warning: All subgraphs are empty! Returning zero rewards.")
+            return np.zeros(original_len)
         
         indices, cs = zip(*cs_with_idx) if cs_with_idx else ([], [])
         cs = list(cs)
@@ -927,54 +990,10 @@ class Runner:
         else:
             batch_g_id = [self.get_g_id(x, True) for x in cs]
             masked_preds = []
-            for idx, (g_id, g, nodes) in enumerate(zip(batch_g_id, batch_g, cs)):
-                # Adjust edge indices to local coordinates
+            for g_id, g in zip(batch_g_id, batch_g):
                 edge_idx = g - self.each_g_start_nid[g_id]
-                
-                # Validate edge indices are non-negative and within bounds
-                if edge_idx.numel() > 0:
-                    min_idx = edge_idx.min().item()
-                    max_idx = edge_idx.max().item()
-                    num_nodes = self.ind_nodefeats[g_id].size(0)
-                    
-                    if min_idx < 0:
-                        print(f"Warning: Negative edge index {min_idx} detected for g_id={g_id}, subgraph {idx}")
-                        print(f"  Edge index range before adjustment: [{g.min().item()}, {g.max().item()}]")
-                        print(f"  Graph start node ID: {self.each_g_start_nid[g_id]}")
-                        print(f"  Nodes in subgraph: {nodes}")
-                        print(f"  Node graph IDs: {[self.n_to_g_index[n] for n in nodes if n < len(self.n_to_g_index)]}")
-                        # Clamp to valid range
-                        edge_idx = torch.clamp(edge_idx, min=0, max=num_nodes-1)
-                        max_idx = edge_idx.max().item()
-                    
-                    if max_idx >= num_nodes:
-                        print(f"Warning: Edge index {max_idx} exceeds num_nodes {num_nodes} for g_id={g_id}, subgraph {idx}")
-                        print(f"  Edge index range: [{edge_idx.min().item()}, {max_idx}]")
-                        print(f"  Nodes in subgraph: {nodes}")
-                        print(f"  Node graph IDs: {[self.n_to_g_index[n] for n in nodes if n < len(self.n_to_g_index)]}")
-                        # Clamp to valid range
-                        edge_idx = torch.clamp(edge_idx, min=0, max=num_nodes-1)
-                
-                # Handle empty edge indices (isolated nodes)
-                if edge_idx.size(1) == 0:
-                    print(f"Warning: Empty edge index for g_id={g_id}, subgraph {idx} (isolated nodes)")
-                    # For graphs with no edges, just get single node features
-                    node_feats = self.ind_nodefeats[g_id][:1]
-                    edge_weights = torch.ones(0, dtype=torch.float32, device=edge_idx.device)
-                else:
-                    edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
-                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
-                    
-                    # Additional validation: ensure node_feats size matches max edge index
-                    required_nodes = edge_idx.max().item() + 1
-                    if node_feats.size(0) < required_nodes:
-                        print(f"Warning: Insufficient node features. Have {node_feats.size(0)}, need {required_nodes}")
-                        # Pad with zeros if needed
-                        padding = torch.zeros(required_nodes - node_feats.size(0), node_feats.size(1), 
-                                            device=node_feats.device, dtype=node_feats.dtype)
-                        node_feats = torch.cat([node_feats, padding], dim=0)
-                
-                pred = self.trained_model(node_feats, edge_idx, edge_weights)
+                edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
+                pred = self.trained_model(self.ind_nodefeats[g_id], edge_idx, edge_weights)
                 masked_preds.append(pred)
             original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
 
@@ -1084,9 +1103,16 @@ class Runner:
                 masked_embeds = []
                 for g_id, g in zip(batch_g_id, batch_g):
                     edge_idx = g - self.each_g_start_nid[g_id]
+                    
+                    # Clamp edge indices to valid range (same as eval_loss)
+                    if edge_idx.numel() > 0:
+                        if edge_idx.min() < 0:
+                            edge_idx = torch.clamp(edge_idx, min=0)
+                        if edge_idx.max() >= self.ind_nodefeats[g_id].size(0):
+                            edge_idx = torch.clamp(edge_idx, max=self.ind_nodefeats[g_id].size(0) - 1)
+                    
                     edge_weights = torch.ones(edge_idx.size(1), dtype=torch.float32, device=edge_idx.device)
-                    node_feats = self.get_node_features_for_edges(g_id, edge_idx)
-                    embed = self.trained_model.graph_embedding(node_feats, edge_idx, edge_weights)
+                    embed = self.trained_model.graph_embedding(self.ind_nodefeats[g_id], edge_idx, edge_weights)[0].squeeze(0)
                     masked_embeds.append(embed)
                 # Contrastive representation loss with cosine similarity (saturates better than L2)
                 sim_loss = [1.0 - torch.nn.functional.cosine_similarity(
@@ -1106,14 +1132,18 @@ class Runner:
                     if 0 <= x[0] < len(self.original_preds):
                         target_y = self.original_preds[x[0]].item()
                     else:
-                        print(f"[CAUSAL] Warning: node_id {x[0]} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
+                        # Suppress warnings for mutag dataset
+                        if self.args.dataset != 'mutag':
+                            print(f"[CAUSAL] Warning: node_id {x[0]} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
                         target_y = 0
                 else:
                     g_id = self.get_g_id(x, True)
                     if 0 <= g_id < len(self.original_preds):
                         target_y = self.original_preds[g_id].item()
                     else:
-                        print(f"[CAUSAL] Warning: g_id {g_id} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
+                        # Suppress warnings for mutag dataset
+                        if self.args.dataset != 'mutag':
+                            print(f"[CAUSAL] Warning: g_id {g_id} out of bounds for original_preds (len={len(self.original_preds)}), using default target_y=0")
                         target_y = 0
                 
                 # Create a simple graph object for causal analysis
@@ -1141,7 +1171,9 @@ class Runner:
                     causal_rewards.append(causal_reward)
                 except Exception as e:
                     # Fallback to zero causal reward if computation fails
-                    print(f"[CAUSAL] Warning: Failed to compute causal reward: {e}")
+                    # Suppress warnings for mutag dataset
+                    if self.args.dataset != 'mutag':
+                        print(f"[CAUSAL] Warning: Failed to compute causal reward: {e}")
                     causal_rewards.append(0.0)
 
             if self.g.use_causal:
@@ -1307,8 +1339,10 @@ class Runner:
         """Create a detailed log file for pretraining performance when no pretrained model is found."""
         import datetime
         
-        # Create log filename
-        log_filename = f"{args.dataset}_seed_{args.seed}.txt"
+        # Create log filename in results directory
+        results_dir = pathlib.Path('results')
+        results_dir.mkdir(parents=True, exist_ok=True)
+        log_filename = results_dir / f"{args.dataset}_seed_{args.seed}.txt"
         log_path = pathlib.Path(log_filename)
         
         # Clear existing file if it exists
