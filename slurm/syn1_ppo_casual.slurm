@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-9
+#SBATCH --array=0
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -82,7 +82,7 @@ POLICY="PPO"
 N_EPOCHS=20
 PPO_EPOCHS=4              
 N_ROLLOUTS=32             
-USE_CAUSAL=False
+USE_CAUSAL=True
 
 # Regularization - BALANCED for proper size control
 SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)

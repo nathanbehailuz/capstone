@@ -7,10 +7,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -c 4
-#SBATCH --mem=24G
+#SBATCH -c 32
+#SBATCH --mem=64G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-9
+#SBATCH --array=0
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -67,7 +67,7 @@ POLICY="PPO"
 MODEL="GNN"
 
 # Training Parameters
-N_EPOCHS=20
+N_EPOCHS=10
 N_ROLLOUTS=5
 PRETRAIN_G_BATCH_SIZE=32
 G_BATCH_SIZE=128

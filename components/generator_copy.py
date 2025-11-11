@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+from torch_geometric.data import Data
 
 from .graph import Graph
 from .generator_core import GraphConv, Agent, masked_categorical_logits
@@ -780,6 +781,31 @@ class Generator:
                         else:
                             r_k = 0.0
                         
+                        # CAUSAL REWARD INTEGRATION: Add causal reward if enabled (STOP case)
+                        if self.use_causal and self.causal_reward_calculator is not None:
+                            # Get target class for this seed node
+                            if hasattr(self, 'target_classes') and self.target_classes is not None:
+                                if hasattr(self, 'seed_nodes') and self.seed_nodes is not None:
+                                    # Find the index of current seed in seed_nodes list
+                                    try:
+                                        seed_idx = self.seed_nodes.index(seed_node)
+                                        target_y = self.target_classes[seed_idx].item() if torch.is_tensor(self.target_classes[seed_idx]) else self.target_classes[seed_idx]
+                                        
+                                        # Create a simple graph object for causal reward computation
+                                        graph = Data(x=nodefeats_tensor, edge_index=self.full_edge_index)
+                                        
+                                        # Compute causal reward for final subgraph at STOP
+                                        causal_r = self.causal_reward_calculator.compute_causal_reward(
+                                            graph, current_subgraph, target_y
+                                        )
+                                        
+                                        # Combine base reward with causal reward
+                                        r_k = self.causal_reward_calculator.compute_combined_reward(r_k, causal_r)
+                                        
+                                    except (ValueError, IndexError) as e:
+                                        # Seed node not in evaluation set, skip causal reward
+                                        pass
+                        
                         # Apply STOP bonus/penalty with confidence and size gates
                         class_ok = torch.argmax(masked_pred) == torch.argmax(original_pred)
                         size_ok = len(current_subgraph) <= self.target_size_k
@@ -829,6 +855,32 @@ class Generator:
                 # Incremental (delta) reward: improvement yields positive reward
                 r_k = self.reward_scale * -(J_k - J_prev)
                 J_prev = J_k
+                
+                # CAUSAL REWARD INTEGRATION: Add causal reward if enabled
+                if self.use_causal and self.causal_reward_calculator is not None:
+                    # Get target class for this seed node
+                    if hasattr(self, 'target_classes') and self.target_classes is not None:
+                        if hasattr(self, 'seed_nodes') and self.seed_nodes is not None:
+                            # Find the index of current seed in seed_nodes list
+                            try:
+                                seed_idx = self.seed_nodes.index(seed_node)
+                                target_y = self.target_classes[seed_idx].item() if torch.is_tensor(self.target_classes[seed_idx]) else self.target_classes[seed_idx]
+                                
+                                # Create a simple graph object for causal reward computation
+                                from torch_geometric.data import Data
+                                graph = Data(x=nodefeats_tensor, edge_index=self.full_edge_index)
+                                
+                                # Compute causal reward for current subgraph
+                                causal_r = self.causal_reward_calculator.compute_causal_reward(
+                                    graph, current_subgraph, target_y
+                                )
+                                
+                                # Combine base reward with causal reward
+                                r_k = self.causal_reward_calculator.compute_combined_reward(r_k, causal_r)
+                                
+                            except (ValueError, IndexError) as e:
+                                # Seed node not in evaluation set, skip causal reward
+                                pass
                 
                 rewards[i, t] = float(r_k)
                 aux_logs.append({"t": t, **parts, "r": float(r_k)})
