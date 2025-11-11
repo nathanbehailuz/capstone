@@ -8,7 +8,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -c 8                     # more CPU to feed the GPU
+#SBATCH -c 32                     # more CPU to feed the GPU
 #SBATCH --mem=24G
 #SBATCH -t 12:00:00
 #SBATCH --array=0
@@ -69,7 +69,7 @@ SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn2"
 POLICY="PPO"
 N_EPOCHS=50
-PPO_EPOCHS=8
+PPO_EPOCHS=10
 N_ROLLOUTS=10
 USE_CAUSAL=False
 
