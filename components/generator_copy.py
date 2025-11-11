@@ -121,7 +121,7 @@ class Generator:
 
     def __init__(self, graph: Graph, model: Agent, optimizer,
                  device: Optional[torch.device] = None,
-                 entropy_coef: float = 1e-6,
+                 entropy_coef: float = 0.01,  # STABILITY FIX 6: Non-zero entropy for exploration
                  n_rollouts: int = 10,
                  max_size: int = 25,
                  k: int = 3,
@@ -159,9 +159,9 @@ class Generator:
                  use_value_clip: bool = True,
                  adaptive_kl_penalty: bool = False,
                  total_epochs: int = 10,
-                 # Entropy scheduling
-                 entropy_coeff_start: float = 1e-3,
-                 entropy_coeff_end: float = 1e-4,
+                 # Entropy scheduling (STABILITY FIX 6: ensuring healthy exploration)
+                 entropy_coeff_start: float = 0.01,
+                 entropy_coeff_end: float = 0.001,
                  # Causal reward scheduling
                  causal_warmup_epochs: int = 5,
                  # Causal mechanism parameters
@@ -1276,9 +1276,10 @@ class Generator:
             lam = self.gae_lambda    # GAE lambda parameter
             T = rewards.size(1)
             
-            # Store old values for PPO
-            old_logps = torch.stack(rollout_buffer['old_logps']).to(self.device)
-            old_values = torch.stack(rollout_buffer['old_values']).to(self.device)
+            # STABILITY FIX 4: Store old values for PPO (ensuring they're detached)
+            # These represent the "old policy" in PPO - they should remain frozen during updates
+            old_logps = torch.stack(rollout_buffer['old_logps']).to(self.device).detach()
+            old_values = torch.stack(rollout_buffer['old_values']).to(self.device).detach()
             
             # Create step indices for proper alignment
             step_indices = []
@@ -1332,8 +1333,9 @@ class Generator:
             ret_flat = torch.stack([returns[epi, t] for epi, t in filtered_step_indices.tolist()])
             val_old_flat = filtered_old_values
             
-            # Global advantage normalization
+            # STABILITY FIX 2: Global advantage normalization with clamping
             adv_flat = (adv_flat - adv_flat.mean()) / (adv_flat.std() + 1e-8)
+            adv_flat = adv_flat.clamp(-10, 10)
             
             # PPO training loop with comprehensive improvements
             total_policy_loss = 0.0
@@ -1501,8 +1503,8 @@ class Generator:
                     loss = policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_bonus + kl_penalty
                     loss.backward()
                     
-                    # Gradient clipping with norm logging
-                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.max_grad_norm)
+                    # STABILITY FIX 3: Gradient clipping with norm logging (ensuring max_norm=1.0 from init)
+                    grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                     
                     self.optimizer.step()
                     update_count += 1
@@ -1566,6 +1568,13 @@ class Generator:
                       f"Updates={avg_stats.update_count}, "
                       f"EpsPolicy={self.clip_range_policy:.2f}, "
                       f"EpsValue={self.clip_range_value:.2f}", flush=True)
+                
+                # STABILITY FIX 5: KL divergence safety - reduce learning rate if KL too high
+                if avg_stats.approx_kl > 0.2:
+                    print(f"[WARN] KL divergence too high ({avg_stats.approx_kl:.3f}), reducing learning rate.", flush=True)
+                    for param_group in self.optimizer.param_groups:
+                        param_group["lr"] *= 0.5
+                        print(f"[INFO] New learning rate: {param_group['lr']:.6f}", flush=True)
                 
                 # Additional delta reward diagnostics
                 if getattr(self.args, 'ppo_debug', False):
@@ -2260,8 +2269,19 @@ class Generator:
             # Apply masking to ensure invalid actions have near-zero probability
             masked_logits = masked_categorical_logits(logits, valid_mask)
             
-            # Convert to probabilities (Issue 6 fix: use dim=-1)
+            # STABILITY FIX 1: Safe softmax with logit stabilization
+            # Subtract max for numerical stability
+            masked_logits = masked_logits - masked_logits.max(dim=-1, keepdim=True).values
             ps = torch.softmax(masked_logits, dim=-1)
+            ps = ps + 1e-8
+            ps = ps / ps.sum(dim=-1, keepdim=True)
+            
+            # Check for invalid probabilities
+            if not torch.isfinite(ps).all():
+                epoch_num = getattr(self, 'current_epoch', -1)
+                print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
+                ps = torch.nan_to_num(ps, nan=0.0, posinf=0.0, neginf=0.0)
+                ps = ps / ps.sum(dim=-1, keepdim=True)
             
             entropy = -(ps * torch.log(ps + 1e-8)).sum(dim=-1)
             action = torch.multinomial(ps, 1).item()
@@ -2307,8 +2327,19 @@ class Generator:
                 # Issue 2 fix: Explicitly detach causal bias to prevent gradient leakage
                 logits = logits + self.causal_action_weight * causal_bias[i].detach()
             
-            # Convert to probabilities
+            # STABILITY FIX 1: Safe softmax with logit stabilization
+            # Subtract max for numerical stability
+            logits = logits - logits.max()
             ps = torch.softmax(logits, dim=0)
+            ps = ps + 1e-8
+            ps = ps / ps.sum()
+            
+            # Check for invalid probabilities
+            if not torch.isfinite(ps).all():
+                epoch_num = getattr(self, 'current_epoch', -1)
+                print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
+                ps = torch.nan_to_num(ps, nan=0.0, posinf=0.0, neginf=0.0)
+                ps = ps / ps.sum()
             
             entropy = -(ps * torch.log(ps + 1e-8)).sum()
             action = torch.multinomial(ps, 1).item()
