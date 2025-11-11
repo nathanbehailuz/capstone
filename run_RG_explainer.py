@@ -502,27 +502,23 @@ class Runner:
         g.init_causal_reward_calculator(self.trained_model)
         
         # Set causal data for intervention-based causal bias computation
-        if args.use_causal:
-            # Get target classes for eval seeds
-            with torch.no_grad():
-                edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
-                all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
-                target_classes = torch.argmax(all_preds, dim=1)[list(self.eval_seeds)]
-            
-            g.set_causal_data(
-                gnn_model=self.trained_model,
-                full_edge_index=self.graphs.edge_index,
-                target_classes=target_classes,
-                seed_nodes=list(self.eval_seeds)
-            )
+        # Get target classes for eval seeds (always needed for delta rewards)
+        with torch.no_grad():
+            edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
+            all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
+            target_classes = torch.argmax(all_preds, dim=1)[list(self.eval_seeds)]
         
-        # Set up GNN model and data for delta rewards (always needed for new PPO)
+        # FIX: Set up GNN model and data for delta rewards (with or without causal)
+        # Pass target_classes when causal is enabled, None otherwise
         g.set_causal_data(
             gnn_model=self.trained_model,
             full_edge_index=self.graphs.edge_index,
-            target_classes=None,  # Not needed for delta rewards
+            target_classes=target_classes if args.use_causal else None,
             seed_nodes=list(self.eval_seeds)
         )
+        
+        if args.use_causal:
+            print(f"[DEBUG] Causal data set: target_classes shape={target_classes.shape}, seed_nodes count={len(list(self.eval_seeds))}")
         
         return g
 

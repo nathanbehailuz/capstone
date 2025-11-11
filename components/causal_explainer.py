@@ -559,8 +559,9 @@ class CausalRewardCalculator:
                     max=1.0
                 ).item()
                 
-                print(f"[CAUSAL REWARD] Subgraph: {len(selected_nodes)} nodes, {state.sum().item()} edges | "
-                      f"Delta: {causal_delta:.4f}, Correct: {pred_class==target_y}, Total: {causal_reward:.4f}")
+                # Commented out to reduce log spam (prints ~5000 times per epoch)
+                # print(f"[CAUSAL REWARD] Subgraph: {len(selected_nodes)} nodes, {state.sum().item()} edges | "
+                #       f"Delta: {causal_delta:.4f}, Correct: {pred_class==target_y}, Total: {causal_reward:.4f}")
                 
                 return causal_reward
                 

@@ -875,7 +875,10 @@ class Generator:
                                     graph, current_subgraph, target_y
                                 )
                                 
-                                # Combine base reward with causal reward
+                                # REVERT: Don't scale causal reward - keeps it conservative
+                                # Causal rewards stay in [-1, 1] range while base rewards are scaled by reward_scale
+                                # This gives causal ~6-15% effective weight, preventing it from dominating
+                                # Combine base reward with causal reward (unscaled)
                                 r_k = self.causal_reward_calculator.compute_combined_reward(r_k, causal_r)
                                 
                             except (ValueError, IndexError) as e:
@@ -1307,7 +1310,12 @@ class Generator:
         lengths = torch.LongTensor([len(x) for x in selected_nodes]).to(self.device)
 
         # compute delta rewards per step
-        rewards = self._compute_delta_rewards(selected_nodes, lam_size, lam_radius, lam_sim)
+        # FIX: Use real GNN reward computation when causal mechanism is enabled
+        if self.use_causal and self.causal_reward_calculator is not None:
+            print(f"[DEBUG] Using _compute_delta_rewards_real_gnn with causal rewards")
+            rewards = self._compute_delta_rewards_real_gnn(selected_nodes, lam_size, lam_radius, lam_sim)
+        else:
+            rewards = self._compute_delta_rewards(selected_nodes, lam_size, lam_radius, lam_sim)
         rewards = torch.from_numpy(rewards).float().to(self.device)
 
         # Per-trajectory reward normalization
@@ -1877,7 +1885,10 @@ class Generator:
             
             # ========== CAUSAL MECHANISM INTEGRATION ==========
             causal_bias = None
-            if self.use_causal and self.causal_explainer is not None and self.gnn_model is not None:
+            # PERFORMANCE FIX: Disable causal action bias - too computationally expensive
+            # (Causal rewards are still computed in _compute_delta_rewards_real_gnn)
+            use_causal_action_bias = False  # Set to True to enable (WARNING: 100x slower!)
+            if use_causal_action_bias and self.use_causal and self.causal_explainer is not None and self.gnn_model is not None:
                 # Get node features as tensor
                 # Ensure node features are on correct device
                 if torch.is_tensor(self.nodefeats):
@@ -2162,13 +2173,21 @@ class Generator:
                     # Replace the seed node lookup with:
                     seed_node = trajectories[i][0]  # First node in trajectory is always the seed
 
-                    # Then validate it's in the expected range
-                    if seed_node >= len(target_classes):
-                        print(f"[CAUSAL] Warning: seed_node {seed_node} out of bounds (target_classes len={len(target_classes)})", flush=True)
+                    # FIX: Map seed_node ID to its index in seed_nodes list
+                    try:
+                        seed_idx = self.seed_nodes.index(seed_node)
+                    except (ValueError, AttributeError):
+                        print(f"[CAUSAL] Warning: seed_node {seed_node} not found in seed_nodes list", flush=True)
+                        causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
+                        continue
+                    
+                    # Then validate the index is in the expected range
+                    if seed_idx >= len(target_classes):
+                        print(f"[CAUSAL] Warning: seed_idx {seed_idx} out of bounds (target_classes len={len(target_classes)})", flush=True)
                         causal_bias.append(torch.ones(len(candidates) + 1, dtype=torch.float32, device=self.device))
                         continue
 
-                    target_class = target_classes[seed_node].item() if torch.is_tensor(target_classes[seed_node]) else target_classes[seed_node]
+                    target_class = target_classes[seed_idx].item() if torch.is_tensor(target_classes[seed_idx]) else target_classes[seed_idx]
                     
                     if len(candidates) == 0:
                         # No candidates - only STOP action available
