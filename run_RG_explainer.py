@@ -21,6 +21,29 @@ import torch_geometric as ptgeom
 from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer
 
 
+def drop_edges(edge_index, drop_prob, device=None):
+    """
+    Randomly drops edges from the graph with probability `drop_prob`.
+    
+    Args:
+        edge_index: torch.Tensor of shape [2, num_edges]
+        drop_prob: float in (0, 1), probability of dropping each edge
+        device: torch device
+    
+    Returns:
+        torch.Tensor: edge_index with randomly dropped edges
+    """
+    if drop_prob <= 0.0:
+        return edge_index
+    
+    # Bernoulli sampling to keep edges
+    mask = (torch.rand(edge_index.size(1)) > drop_prob)
+    if device is not None:
+        mask = mask.to(device)
+    
+    return edge_index[:, mask]
+
+
 def linear_schedule(epoch, warmup, span, start, end):
     """Linear schedule helper for λ parameters."""
     if epoch < warmup:
@@ -49,7 +72,7 @@ def get_lambda_schedule(epoch, args):
     return lam_size, lam_radius, lam_sim, entropy_c
 
 
-def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn, dataset, writer, use_set=True):
+def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn, dataset, writer, use_set=True, args=None):
     eval_seeds = np.array(eval_seeds)
     shuffle_index = np.arange(len(train_comms)) 
     
@@ -71,6 +94,34 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
         np.random.shuffle(shuffle_index)
         train_comms = train_comms[shuffle_index]
         eval_seeds = eval_seeds[shuffle_index]
+
+        # Apply random edge dropping for robustness (XG-Explainer strategy)
+        original_graph = None
+        if args is not None and args.random_edge_drop > 0:
+            # Save original graph
+            original_graph = g.graph
+            original_edge_index = original_graph.edge_index
+            
+            # Apply edge dropping
+            dropped_edge_index = drop_edges(original_edge_index, args.random_edge_drop, device=original_edge_index.device)
+            
+            # Log on first iteration
+            if i == 0:
+                original_edges = original_edge_index.size(1)
+                remaining_edges = dropped_edge_index.size(1)
+                drop_rate = (original_edges - remaining_edges) / original_edges if original_edges > 0 else 0
+                print(f'[Pretrain Edge Drop] Probability: {args.random_edge_drop:.3f}', flush=True)
+                print(f'[Pretrain Edge Drop] Edges: {original_edges} -> {remaining_edges} (retained: {100*(1-drop_rate):.1f}%)', flush=True)
+            
+            # Create temporary graph with dropped edges
+            # Convert edge_index to numpy for Graph constructor
+            dropped_edges_np = dropped_edge_index.cpu().numpy()
+            temp_graph = Graph(dropped_edges_np)
+            # Preserve the device for edge_index
+            temp_graph.edge_index = dropped_edge_index
+            
+            # Replace graph for this iteration
+            g.graph = temp_graph
 
         batch_loss = 0.
         batch_count = 0
@@ -95,6 +146,10 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
             batch_loss += policy_loss
             batch_count += 1
             total_samples += len(batch)
+        
+        # Restore original graph after batch processing
+        if original_graph is not None:
+            g.graph = original_graph
         
         if batch_count > 0:
             avg_loss = batch_loss / batch_count
@@ -875,11 +930,11 @@ class Runner:
 
         # pretrain g
         print("Starting List-based pretraining...", flush=True)
-        list_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_list, self.score_fn, self.args.dataset, writer=None, use_set=False)
+        list_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_list, self.score_fn, self.args.dataset, writer=None, use_set=False, args=args)
         pretrain_metrics['list_based'] = list_metrics
         
         print("Starting Set-based pretraining...", flush=True)
-        set_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_set, self.score_fn, self.args.dataset, writer=None, use_set=True)
+        set_metrics = pretrain_g(self.g, self.pretrain_nodes, self.pretrain_eval_nodes, args.max_size, args.pretrain_g_batch_size, args.pretrain_set, self.score_fn, self.args.dataset, writer=None, use_set=True, args=args)
         pretrain_metrics['set_based'] = set_metrics
         
         return pretrain_metrics
@@ -1355,6 +1410,9 @@ if __name__ == '__main__':
     parser.add_argument("--kl_adapt_high_threshold", type=float, default=2.0, help="Threshold multiplier for high KL")
     parser.add_argument("--kl_adapt_low_threshold", type=float, default=0.5, help="Threshold multiplier for low KL")
     parser.add_argument("--entropy_decay_fraction", type=float, default=0.7, help="Fraction of epochs for entropy decay (0.7 = 70%)")
+    
+    # Edge dropping for pretraining robustness
+    parser.add_argument("--random_edge_drop", type=float, default=0.0, help="Probability of randomly dropping edges during pretraining (0.0 to 1.0)")
 
     args = parser.parse_args()
     
