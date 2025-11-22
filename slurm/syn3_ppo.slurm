@@ -10,12 +10,12 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=9
+#SBATCH --array=0-3
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
 
-# set -euo pipefail
+set -euo pipefail
 
 # Always run from the submit dir
 cd "${SLURM_SUBMIT_DIR}"
@@ -45,6 +45,22 @@ export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH:-}"
 # Sanity: use the env's Python explicitly
 PYBIN="${CONDA_PREFIX}/bin/python"
 
+# Threads & perf-friendly defaults
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export MKL_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export OPENBLAS_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export NUMEXPR_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
+export PYTHONUNBUFFERED=1
+
+# CUDA placement: Slurm sets CUDA_VISIBLE_DEVICES; honor it.
+export CUDA_DEVICE_ORDER=PCI_BUS_ID
+
+# PyTorch memory allocator: reduces fragmentation in long runs
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# (Optional) Dataloader workers hint your code can read; harmless if unused
+export DATALOADER_WORKERS=$(( ${SLURM_CPUS_PER_TASK:-4} > 1 ? ${SLURM_CPUS_PER_TASK:-4} - 1 : 1 ))
+
 # Helpful runtime flags while debugging
 export CUDA_LAUNCH_BLOCKING=1
 export TORCH_SHOW_CPP_STACKTRACES=1
@@ -63,7 +79,7 @@ export PYTHONNOUSERSITE=1
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn3"
 POLICY="PPO"
-N_EPOCHS=5
+N_EPOCHS=20
 PPO_EPOCHS=6
 N_ROLLOUTS=10
 USE_CAUSAL=False
@@ -120,6 +136,22 @@ ENTROPY_COEFF_END=1e-4
 # Debug
 PPO_DEBUG=1
 
+# === Additional Hyperparameters (previously hard-coded) ===
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=8
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
+
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
     RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
@@ -128,15 +160,19 @@ else
 fi
 
 # Clean the result file before starting
-> "$RESULT_FILE"
+: > "$RESULT_FILE"
 
-echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
+# Mirror all subsequent stdout/stderr to both the results file and SLURM log
+exec > >(tee -a "$RESULT_FILE")
+exec 2>&1
+
+echo "[$(date)] Starting seed=$SEED"
 
 ## ============== GPU & Torch Probes ===============
-echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}" | tee -a "$RESULT_FILE"
+echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-<unset>}"
 
 # Confirm GPU is allocated to THIS step
-srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
+srun --gres=gpu:1 nvidia-smi
 
 # Probe torch CUDA inside the allocation
 # srun --gres=gpu:1 bash -lc " \
@@ -154,6 +190,9 @@ srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
 # " | tee -a "$RESULT_FILE"
 
 ## ================== TRAINING =====================
+# Debug: print STOP_MASK_VALUE
+echo "DEBUG: STOP_MASK_VALUE='${STOP_MASK_VALUE}'"
+
 # Launch your script INSIDE the GPU step, using the env's python
 srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
   "${PYBIN}" run_RG_explainer.py \
@@ -176,7 +215,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --clip_range_policy 0.2 \
     --clip_range_value 0.5 \
     --kl_target 0.025 \
-    --adaptive_kl_penalty \
     --entropy_decay_start 0.001 \
     --entropy_decay_end 0.0005 \
     --fidelity_thresh "${FIDELITY_THRESH}" \
@@ -184,7 +222,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --debug_mode "${DEBUG_MODE}" \
     --target_size_k "${TARGET_SIZE_K}" \
     --reward_norm \
-    \
     --delta_reward "${DELTA_REWARD}" \
     --stop_bonus_ok "${STOP_BONUS_OK}" \
     --stop_penalty_bad "${STOP_PENALTY_BAD}" \
@@ -199,7 +236,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --std_advantage "${STD_ADVANTAGE}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
-    --ppo_debug \
-  >> "$RESULT_FILE" 2>&1
+    --ppo_debug >> "$RESULT_FILE" 2>&1
 
-echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"
+echo "[$(date)] Finished seed=$SEED"

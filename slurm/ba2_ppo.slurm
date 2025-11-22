@@ -7,8 +7,8 @@
 #SBATCH --gres=gpu:1
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH -c 4
-#SBATCH --mem=24G
+#SBATCH -c 32
+#SBATCH --mem=64G
 #SBATCH -t 7:00:00
 #SBATCH --array=0
 #SBATCH -o slurm_out/%x_%A_%a.out
@@ -171,6 +171,22 @@ ENTROPY_COEFF_END=1e-4
 # Debug
 PPO_DEBUG=1
 
+# === Additional Hyperparameters (previously hard-coded) ===
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=10
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
+
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
     RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
@@ -218,7 +234,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --update_l_sample_rate "${UPDATE_L_SAMPLE_RATE}" \
     --l_lr "${L_LR}" \
     --pretrain_l_iter "${PRETRAIN_L_ITER}" \
-    --hidden_size "${HIDDEN_SIZE}" \
     --g_lr "${G_LR}" \
     --n_rollouts "${N_ROLLOUTS}" \
     --pretrain_g_batch_size "${PRETRAIN_G_BATCH_SIZE}" \
@@ -226,7 +241,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --size_reg "${SIZE_REG}" \
     --sim_reg "${SIM_REG}" \
     --radius_penalty "${RADIUS_PENALTY}" \
-    --entropy_coef "${ENTROPY_COEF}" \
     --pretrain_list "${PRETRAIN_LIST}" \
     --pretrain_set "${PRETRAIN_SET}" \
     --n_epochs "${N_EPOCHS}" \
@@ -236,19 +250,14 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --policy "${POLICY}" \
     --ppo_epochs "${PPO_EPOCHS}" \
     --minibatch_size "${MINIBATCH_SIZE}" \
-    --clip_eps "${CLIP_EPS}" \
     --grad_clip "${GRAD_CLIP}" \
     --frontier_shaping_beta "${FRONTIER_SHAPING_BETA}" \
-    --entropy_decay_start "${ENTROPY_DECAY_START}" \
-    --entropy_decay_end "${ENTROPY_DECAY_END}" \
-    --entropy_decay_final "${ENTROPY_DECAY_FINAL}" \
     --use_causal "${USE_CAUSAL}" \
     --causal_weight "${CAUSAL_WEIGHT}" \
     --causal_warmup_epochs "${CAUSAL_WARMUP_EPOCHS}" \
     --target_size_k "${TARGET_SIZE_K}" \
     --lambda_size "${LAMBDA_SIZE}" \
     --lambda_radius "${LAMBDA_RADIUS}" \
-    --lambda_radius_min "${LAMBDA_RADIUS_MIN}" \
     --step_cost "${STEP_COST}" \
     --stop_bias "${STOP_BIAS}" \
     --fidelity_thresh "${FIDELITY_THRESH}" \
@@ -286,6 +295,20 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
     --ppo_debug \
+    \
+    --value_loss_coef "${VALUE_LOSS_COEF}" \
+    --value_loss_scale "${VALUE_LOSS_SCALE}" \
+    --confidence_threshold "${CONFIDENCE_THRESHOLD}" \
+    --confidence_tolerance "${CONFIDENCE_TOLERANCE}" \
+    --causal_action_weight "${CAUSAL_ACTION_WEIGHT}" \
+    --causal_gamma "${CAUSAL_GAMMA}" \
+    --ice_score_default "${ICE_SCORE_DEFAULT}" \
+    --stop_mask_value="${STOP_MASK_VALUE}" \
+    --min_steps_before_stop "${MIN_STEPS_BEFORE_STOP}" \
+    --kl_adapt_high_multiplier "${KL_ADAPT_HIGH_MULTIPLIER}" \
+    --kl_adapt_low_multiplier "${KL_ADAPT_LOW_MULTIPLIER}" \
+    --kl_adapt_high_threshold "${KL_ADAPT_HIGH_THRESHOLD}" \
+    --kl_adapt_low_threshold "${KL_ADAPT_LOW_THRESHOLD}" \
   >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"

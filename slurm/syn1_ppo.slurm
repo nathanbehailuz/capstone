@@ -1,8 +1,6 @@
 #!/bin/bash
 # File: syn1_ppo.slurm
  
-
-
 ## ===================== SLURM =====================
 #SBATCH -J rgx_syn1_ppo
 #SBATCH -p nvidia
@@ -81,9 +79,9 @@ export PYTHONNOUSERSITE=1
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn1"
 POLICY="PPO"
-N_EPOCHS=10
-PPO_EPOCHS=4              # Reduced from 6 for stability
-N_ROLLOUTS=32             # Increased from 10 to compensate for shorter trajectories
+N_EPOCHS=20
+PPO_EPOCHS=4              
+N_ROLLOUTS=32             
 USE_CAUSAL=False
 
 # Regularization - BALANCED for proper size control
@@ -139,6 +137,21 @@ ENTROPY_COEFF_END=0.0005  # Increased from 1e-4 for sustained exploration
 # Debug
 PPO_DEBUG=1
 
+VALUE_LOSS_COEF=0.3
+VALUE_LOSS_SCALE=0.5
+CONFIDENCE_THRESHOLD=0.5
+CONFIDENCE_TOLERANCE=0.05
+CAUSAL_ACTION_WEIGHT=0.2
+CAUSAL_GAMMA=0.5
+ICE_SCORE_DEFAULT=-5.0
+STOP_MASK_VALUE=-1e9
+MIN_STEPS_BEFORE_STOP=8
+KL_ADAPT_HIGH_MULTIPLIER=2.0
+KL_ADAPT_LOW_MULTIPLIER=0.5
+KL_ADAPT_HIGH_THRESHOLD=2.0
+KL_ADAPT_LOW_THRESHOLD=0.5
+ENTROPY_DECAY_FRACTION=0.7
+
 # Set result file name based on causal flag
 if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
     RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
@@ -173,6 +186,9 @@ srun --gres=gpu:1 nvidia-smi | tee -a "$RESULT_FILE"
 # " | tee -a "$RESULT_FILE"
 
 ## ================== TRAINING =====================
+# Debug: print STOP_MASK_VALUE
+echo "DEBUG: STOP_MASK_VALUE='${STOP_MASK_VALUE}'" | tee -a "$RESULT_FILE"
+
 # Launch your script INSIDE the GPU step, using the env's python
 srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
   "${PYBIN}" run_RG_explainer.py \
@@ -202,7 +218,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --debug_mode "${DEBUG_MODE}" \
     --target_size_k "${TARGET_SIZE_K}" \
     --reward_norm \
-    \
     --delta_reward "${DELTA_REWARD}" \
     --stop_bonus_ok "${STOP_BONUS_OK}" \
     --stop_penalty_bad "${STOP_PENALTY_BAD}" \
@@ -218,7 +233,6 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --std_advantage "${STD_ADVANTAGE}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
-    --ppo_debug \
-  >> "$RESULT_FILE" 2>&1
+    --ppo_debug >> "$RESULT_FILE" 2>&1
 
 echo "[$(date)] Finished seed=$SEED" | tee -a "$RESULT_FILE"
