@@ -17,5 +17,8 @@ viz_env/
 notes/
 res
 pretrained/
-analysis/
+analysis/plots/
+analysis/jsons/
+analysis/txts/
+analysis/*.md
 prev/ 

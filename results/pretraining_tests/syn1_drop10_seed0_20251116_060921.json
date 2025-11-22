@@ -1,0 +1,176 @@
+{
+  "config": {
+    "dataset": "syn1",
+    "model": "RGExplainer_v1",
+    "seed": 0,
+    "with_attr": true,
+    "n_hop": 3,
+    "max_size": 15,
+    "hidden_size": 64,
+    "pretrain_list": 10,
+    "pretrain_set": 10,
+    "pretrain_g_batch_size": 32,
+    "pretrain_l_iter": 50,
+    "pretrain_l_sample_rate": 1.0,
+    "l_lr": 0.01,
+    "g_lr": 0.01,
+    "random_edge_drop": 0.1,
+    "ppo_test_epochs": 2,
+    "skip_ppo_test": false,
+    "skip_eval_robustness": false,
+    "n_epochs": 5,
+    "g_batch_size": 128,
+    "n_rollouts": 5,
+    "ppo_epochs": 4,
+    "minibatch_size": 256,
+    "warmup_epochs": 3,
+    "schedule_epochs": 12,
+    "entropy_coeff_start": 0.003,
+    "entropy_coeff_end": 0.0005,
+    "lambda_size_final": 0.02,
+    "lambda_radius_final": 0.1,
+    "lambda_sim_start": 0.0,
+    "lambda_sim_final": 0.005,
+    "size_reg": 0.01,
+    "sim_reg": 0.01,
+    "radius_penalty": 0.1,
+    "entropy_coef": 0.0,
+    "clip_eps": 0.2,
+    "clip_range_policy": 0.2,
+    "clip_range_value": 0.25,
+    "gamma": 0.99,
+    "gae_lambda": 0.95,
+    "grad_clip": 1.0,
+    "max_grad_norm": 0.5,
+    "kl_target": 0.0075,
+    "lr": 5e-05,
+    "use_value_clip": true,
+    "adaptive_kl_penalty": false,
+    "ppo_clip": 0.1,
+    "vf_clip": 0.5,
+    "use_gae": true,
+    "reward_norm": true,
+    "target_size_k": 8,
+    "lambda_size": 0.5,
+    "lambda_radius": 1.0,
+    "lambda_radius_min": 0.2,
+    "step_cost": 0.001,
+    "stop_bias": 0.5,
+    "fidelity_thresh": 0.05,
+    "reward_scale": 10.0,
+    "stop_bonus_ok": 0.1,
+    "stop_penalty_bad": 0.4,
+    "use_causal": true,
+    "causal_weight": 0.5,
+    "causal_warmup_epochs": 5,
+    "value_loss_coef": 0.3,
+    "value_loss_scale": 0.5,
+    "confidence_threshold": 0.5,
+    "confidence_tolerance": 0.05,
+    "causal_action_weight": 0.2,
+    "causal_gamma": 0.5,
+    "lambda_conf": 0.1,
+    "ice_score_default": -5.0,
+    "stop_mask_value": -1000000000.0,
+    "min_steps_before_stop": 8,
+    "kl_adapt_high_multiplier": 2.0,
+    "kl_adapt_low_multiplier": 0.5,
+    "kl_adapt_high_threshold": 2.0,
+    "kl_adapt_low_threshold": 0.5,
+    "entropy_decay_fraction": 0.7,
+    "entropy_decay_start": 0.001,
+    "entropy_decay_end": 0.0001,
+    "entropy_decay_final": 0.0,
+    "delta_reward": 1,
+    "traj_reward_norm": 1,
+    "std_advantage": 1,
+    "update_l_sample_rate": 0.2,
+    "n_g_updates": 1,
+    "n_l_updates": 10,
+    "eval_every": 1,
+    "debug_mode": 0,
+    "ppo_debug": false,
+    "dry_run_debug": false,
+    "output_dir": "results/pretraining_tests",
+    "savedir": "ckpts/syn1/test_20251116060624/",
+    "policy": "PPO",
+    "frontier_shaping_beta": 0.0,
+    "edge_score_agg": "max",
+    "debug_eval_graph": -1,
+    "ds_name": "syn1-1.90",
+    "clip_range": 0.2
+  },
+  "pretrain_metrics": {
+    "duration_seconds": 92.80648374557495,
+    "auc_score": 0.724859216388774,
+    "dataset": "syn1",
+    "seed": 0,
+    "edge_drop_prob": 0.1
+  },
+  "robustness_metrics": {
+    "results": {
+      "drop_00": {
+        "pred_loss": 1.392778992652893,
+        "size_loss": 0.16966667771339417,
+        "sim_loss": 0.010595732368528843,
+        "radius_penalty": 0.34333330392837524,
+        "total_loss": 1.916374683380127
+      },
+      "drop_10": {
+        "pred_loss": 1.122340440750122,
+        "size_loss": 0.16766667366027832,
+        "sim_loss": 0.009198331274092197,
+        "radius_penalty": 0.36666667461395264,
+        "total_loss": 1.6658720970153809
+      },
+      "drop_20": {
+        "pred_loss": 1.3605923652648926,
+        "size_loss": 0.1773333102464676,
+        "sim_loss": 0.010479523800313473,
+        "radius_penalty": 0.3466666340827942,
+        "total_loss": 1.8950719833374023
+      },
+      "drop_30": {
+        "pred_loss": 1.2535909414291382,
+        "size_loss": 0.16566665470600128,
+        "sim_loss": 0.010369249619543552,
+        "radius_penalty": 0.3449999988079071,
+        "total_loss": 1.7746269702911377
+      }
+    },
+    "deltas": {
+      "drop_10": -0.2505025863647461,
+      "drop_20": -0.02130270004272461,
+      "drop_30": -0.14174771308898926
+    },
+    "baseline_loss": 1.916374683380127
+  },
+  "ppo_metrics": {
+    "epochs": [
+      1,
+      2
+    ],
+    "rewards": [
+      -0.010542158037424088,
+      -0.005242326762527227
+    ],
+    "policy_losses": [
+      0.28986700549721717,
+      0.28732666820287706
+    ],
+    "lengths": [
+      9.5,
+      9.8515625
+    ],
+    "early_stop_rates": [
+      1.0,
+      0.9921875
+    ],
+    "avg_sizes": [
+      8.5,
+      8.859375
+    ]
+  },
+  "total_duration_seconds": 177.7268042564392,
+  "timestamp": "20251116_060921"
+}

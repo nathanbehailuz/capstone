@@ -1,0 +1,73 @@
+============================================================
+PRETRAINING TEST RUNNER
+============================================================
+Start Time: 2025-11-16 05:54:44
+Dataset: syn1
+Seed: 0
+Edge Drop Probability: 0.1
+Pretrain Iterations: List=10, Set=10
+PPO Test Epochs: 2
+Robustness Eval: Enabled
+Log File: results/pretraining_tests/syn1_drop10_seed0_20251116_055444.log
+SLURM Job ID: 12859577
+============================================================
+
+
+============================================================
+PHASE 1: PRETRAINING
+============================================================
+Initializing Runner...
+Loading syn1 dataset
+This model obtained: Train Acc: 0.9696, Val Acc: 1.0000, Test Acc: 1.0000.
+Eval Seeds range(400, 700, 5)
+Prediction Error for Whole Graph: 0.03571428571428571
+Prediction Error for Eval Seeds: 0.016666666666666666
+N-hop 3
+Max Size in SG 201
+[CAUSAL] Causal mechanism check passed: use_causal=True
+[CAUSAL] Initialized NodeLevelCausalExplainer with 4 classes, weight 0.5
+[CAUSAL] Initialized causal reward calculator with weight 0.5
+[CAUSAL] GNN model frozen for causal interventions
+[DEBUG] Causal data set: target_classes shape=torch.Size([60]), seed_nodes count=60
+[CAUSAL] Causal mechanism enabled
+[CAUSAL] Task type: node_task
+[CAUSAL] Causal weight: 0.5
+
+Starting pretraining phase...
+CODE: 126D7AB7A6EBD0E608EEE9C9D0E6638A
+Pre-trained model not found! Starting pretraining...
+Starting List-based pretraining...
+[Pretrain Edge Drop] Probability: 0.100
+[Pretrain Edge Drop] Edges: 4110 -> 3720 (retained: 90.5%)
+[Pretrain-List   1] Loss = 4.1199 | Batches = 2 | Samples = 60
+There exists isolated nodes! Some nodes do not have edges
+[Pretrain-List   2] Loss = 4.3134 | Batches = 2 | Samples = 60
+[Pretrain-List   3] Loss = 4.2060 | Batches = 2 | Samples = 60
+[Pretrain-List   4] Loss = 4.2155 | Batches = 2 | Samples = 60
+[Pretrain-List   5] Loss = 4.0666 | Batches = 2 | Samples = 60
+[Pretrain-List   6] Loss = 4.1116 | Batches = 2 | Samples = 60
+[Pretrain-List   7] Loss = 4.0468 | Batches = 2 | Samples = 60
+[Pretrain-List   8] Loss = 4.1234 | Batches = 2 | Samples = 60
+[Pretrain-List   9] Loss = 4.0705 | Batches = 2 | Samples = 60
+[Pretrain-List  10] Loss = 4.0824 | Batches = 2 | Samples = 60
+Starting Set-based pretraining...
+[Pretrain Edge Drop] Probability: 0.100
+[Pretrain Edge Drop] Edges: 4110 -> 3697 (retained: 90.0%)
+[Pretrain-Set    1] Loss = 3.9432 | Batches = 2 | Samples = 60
+[Pretrain-Set    2] Loss = 3.9058 | Batches = 2 | Samples = 60
+[Pretrain-Set    3] Loss = 3.8448 | Batches = 2 | Samples = 60
+[Pretrain-Set    4] Loss = 3.7865 | Batches = 2 | Samples = 60
+[Pretrain-Set    5] Loss = 3.8631 | Batches = 2 | Samples = 60
+[Pretrain-Set    6] Loss = 3.7457 | Batches = 2 | Samples = 60
+[Pretrain-Set    7] Loss = 3.7220 | Batches = 2 | Samples = 60
+[Pretrain-Set    8] Loss = 3.7103 | Batches = 2 | Samples = 60
+[Pretrain-Set    9] Loss = 3.7669 | Batches = 2 | Samples = 60
+[Pretrain-Set   10] Loss = 3.6617 | Batches = 2 | Samples = 60
+Save the pre-trained model!
+Pretraining performance log saved to: results/syn1_seed_0.txt
+
+Pretraining completed in 93.1 seconds (1.6 minutes)
+
+Evaluating pretrained model...
+
+✗ Test failed with error: name 'args' is not defined

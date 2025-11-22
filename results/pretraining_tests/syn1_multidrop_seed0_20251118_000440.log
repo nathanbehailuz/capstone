@@ -1,0 +1,540 @@
+============================================================
+MULTI-DROP RATIO PRETRAINING TEST
+============================================================
+Start Time: 2025-11-18 00:04:40
+Dataset: syn1
+Seed: 0
+Edge Drop Ratios: [0, 5, 10, 15, 20, 25, 30]%
+Pretrain Iterations: List=50, Set=100
+RL Training Epochs: 20
+Log File: results/pretraining_tests/syn1_multidrop_seed0_20251118_000440.log
+SLURM Job ID: 12871029
+============================================================
+
+
+============================================================
+MULTI-DROP RATIO EXPERIMENT
+============================================================
+Testing edge drop ratios: [0, 5, 10, 15, 20, 25, 30]%
+============================================================
+
+============================================================
+PHASE 1: PRETRAINING AT MULTIPLE DROP RATIOS
+============================================================
+
+============================================================
+PRETRAINING: 0% Edge Drop
+============================================================
+Initializing Runner...
+Loading syn1 dataset
+This model obtained: Train Acc: 0.9696, Val Acc: 1.0000, Test Acc: 1.0000.
+Eval Seeds range(400, 700, 5)
+Prediction Error for Whole Graph: 0.03571428571428571
+Prediction Error for Eval Seeds: 0.016666666666666666
+N-hop 3
+Max Size in SG 201
+[CAUSAL] Causal mechanism check passed: use_causal=True
+[CAUSAL] Initialized NodeLevelCausalExplainer with 4 classes, weight 0.3
+[CAUSAL] Initialized causal reward calculator with weight 0.3
+[CAUSAL] GNN model frozen for causal interventions
+[DEBUG] Causal data set: target_classes shape=torch.Size([60]), seed_nodes count=60
+[CAUSAL] Causal mechanism enabled
+[CAUSAL] Task type: node_task
+[CAUSAL] Causal weight: 0.3
+
+Starting pretraining with 0% edge drop...
+Starting List-based pretraining...
+[Pretrain-List   1] Loss = 4.1664 | Batches = 2 | Samples = 60
+[Pretrain-List   2] Loss = 4.1978 | Batches = 2 | Samples = 60
+[Pretrain-List   3] Loss = 4.0371 | Batches = 2 | Samples = 60
+[Pretrain-List   4] Loss = 3.9544 | Batches = 2 | Samples = 60
+[Pretrain-List   5] Loss = 3.7359 | Batches = 2 | Samples = 60
+[Pretrain-List   6] Loss = 3.7583 | Batches = 2 | Samples = 60
+[Pretrain-List   7] Loss = 3.5911 | Batches = 2 | Samples = 60
+[Pretrain-List   8] Loss = 3.6078 | Batches = 2 | Samples = 60
+[Pretrain-List   9] Loss = 3.4156 | Batches = 2 | Samples = 60
+[Pretrain-List  10] Loss = 3.5004 | Batches = 2 | Samples = 60
+[Pretrain-List  11] Loss = 3.3439 | Batches = 2 | Samples = 60
+[Pretrain-List  12] Loss = 3.3312 | Batches = 2 | Samples = 60
+[Pretrain-List  13] Loss = 3.3199 | Batches = 2 | Samples = 60
+[Pretrain-List  14] Loss = 3.2227 | Batches = 2 | Samples = 60
+[Pretrain-List  15] Loss = 3.2814 | Batches = 2 | Samples = 60
+[Pretrain-List  16] Loss = 3.1420 | Batches = 2 | Samples = 60
+[Pretrain-List  17] Loss = 3.1440 | Batches = 2 | Samples = 60
+[Pretrain-List  18] Loss = 3.0338 | Batches = 2 | Samples = 60
+[Pretrain-List  19] Loss = 3.1575 | Batches = 2 | Samples = 60
+[Pretrain-List  20] Loss = 3.1497 | Batches = 2 | Samples = 60
+[Pretrain-List  21] Loss = 2.9923 | Batches = 2 | Samples = 60
+[Pretrain-List  22] Loss = 3.0616 | Batches = 2 | Samples = 60
+[Pretrain-List  23] Loss = 3.1099 | Batches = 2 | Samples = 60
+[Pretrain-List  24] Loss = 3.0655 | Batches = 2 | Samples = 60
+[Pretrain-List  25] Loss = 3.0596 | Batches = 2 | Samples = 60
+[Pretrain-List  26] Loss = 2.9175 | Batches = 2 | Samples = 60
+[Pretrain-List  27] Loss = 2.9536 | Batches = 2 | Samples = 60
+[Pretrain-List  28] Loss = 2.9317 | Batches = 2 | Samples = 60
+[Pretrain-List  29] Loss = 2.9160 | Batches = 2 | Samples = 60
+[Pretrain-List  30] Loss = 2.9358 | Batches = 2 | Samples = 60
+[Pretrain-List  31] Loss = 2.8691 | Batches = 2 | Samples = 60
+[Pretrain-List  32] Loss = 2.9916 | Batches = 2 | Samples = 60
+[Pretrain-List  33] Loss = 2.8834 | Batches = 2 | Samples = 60
+[Pretrain-List  34] Loss = 2.9200 | Batches = 2 | Samples = 60
+[Pretrain-List  35] Loss = 2.9462 | Batches = 2 | Samples = 60
+[Pretrain-List  36] Loss = 2.9439 | Batches = 2 | Samples = 60
+[Pretrain-List  37] Loss = 2.8175 | Batches = 2 | Samples = 60
+[Pretrain-List  38] Loss = 2.9110 | Batches = 2 | Samples = 60
+[Pretrain-List  39] Loss = 2.8833 | Batches = 2 | Samples = 60
+[Pretrain-List  40] Loss = 2.9307 | Batches = 2 | Samples = 60
+[Pretrain-List  41] Loss = 2.8900 | Batches = 2 | Samples = 60
+[Pretrain-List  42] Loss = 2.8783 | Batches = 2 | Samples = 60
+[Pretrain-List  43] Loss = 2.9013 | Batches = 2 | Samples = 60
+[Pretrain-List  44] Loss = 2.9776 | Batches = 2 | Samples = 60
+[Pretrain-List  45] Loss = 2.9258 | Batches = 2 | Samples = 60
+[Pretrain-List  46] Loss = 2.8269 | Batches = 2 | Samples = 60
+[Pretrain-List  47] Loss = 2.7847 | Batches = 2 | Samples = 60
+[Pretrain-List  48] Loss = 2.7939 | Batches = 2 | Samples = 60
+[Pretrain-List  49] Loss = 2.7856 | Batches = 2 | Samples = 60
+[Pretrain-List  50] Loss = 2.8420 | Batches = 2 | Samples = 60
+Starting Set-based pretraining...
+[Pretrain-Set    1] Loss = 2.3484 | Batches = 2 | Samples = 60
+[Pretrain-Set    2] Loss = 2.3484 | Batches = 2 | Samples = 60
+[Pretrain-Set    3] Loss = 2.3504 | Batches = 2 | Samples = 60
+[Pretrain-Set    4] Loss = 2.3139 | Batches = 2 | Samples = 60
+[Pretrain-Set    5] Loss = 2.2271 | Batches = 2 | Samples = 60
+[Pretrain-Set    6] Loss = 2.3283 | Batches = 2 | Samples = 60
+[Pretrain-Set    7] Loss = 2.3335 | Batches = 2 | Samples = 60
+[Pretrain-Set    8] Loss = 2.2786 | Batches = 2 | Samples = 60
+[Pretrain-Set    9] Loss = 2.2513 | Batches = 2 | Samples = 60
+[Pretrain-Set   10] Loss = 2.3306 | Batches = 2 | Samples = 60
+[Pretrain-Set   11] Loss = 2.3085 | Batches = 2 | Samples = 60
+[Pretrain-Set   12] Loss = 2.3009 | Batches = 2 | Samples = 60
+[Pretrain-Set   13] Loss = 2.2690 | Batches = 2 | Samples = 60
+[Pretrain-Set   14] Loss = 2.2423 | Batches = 2 | Samples = 60
+[Pretrain-Set   15] Loss = 2.3114 | Batches = 2 | Samples = 60
+[Pretrain-Set   16] Loss = 2.3203 | Batches = 2 | Samples = 60
+[Pretrain-Set   17] Loss = 2.2964 | Batches = 2 | Samples = 60
+[Pretrain-Set   18] Loss = 2.2369 | Batches = 2 | Samples = 60
+[Pretrain-Set   19] Loss = 2.3321 | Batches = 2 | Samples = 60
+[Pretrain-Set   20] Loss = 2.2469 | Batches = 2 | Samples = 60
+[Pretrain-Set   21] Loss = 2.3550 | Batches = 2 | Samples = 60
+[Pretrain-Set   22] Loss = 2.2922 | Batches = 2 | Samples = 60
+[Pretrain-Set   23] Loss = 2.2349 | Batches = 2 | Samples = 60
+[Pretrain-Set   24] Loss = 2.2452 | Batches = 2 | Samples = 60
+[Pretrain-Set   25] Loss = 2.2523 | Batches = 2 | Samples = 60
+[Pretrain-Set   26] Loss = 2.3055 | Batches = 2 | Samples = 60
+[Pretrain-Set   27] Loss = 2.2761 | Batches = 2 | Samples = 60
+[Pretrain-Set   28] Loss = 2.2958 | Batches = 2 | Samples = 60
+[Pretrain-Set   29] Loss = 2.2723 | Batches = 2 | Samples = 60
+[Pretrain-Set   30] Loss = 2.2489 | Batches = 2 | Samples = 60
+[Pretrain-Set   31] Loss = 2.2286 | Batches = 2 | Samples = 60
+[Pretrain-Set   32] Loss = 2.1688 | Batches = 2 | Samples = 60
+[Pretrain-Set   33] Loss = 2.2086 | Batches = 2 | Samples = 60
+[Pretrain-Set   34] Loss = 2.2512 | Batches = 2 | Samples = 60
+[Pretrain-Set   35] Loss = 2.3086 | Batches = 2 | Samples = 60
+[Pretrain-Set   36] Loss = 2.2448 | Batches = 2 | Samples = 60
+[Pretrain-Set   37] Loss = 2.2569 | Batches = 2 | Samples = 60
+[Pretrain-Set   38] Loss = 2.2084 | Batches = 2 | Samples = 60
+[Pretrain-Set   39] Loss = 2.2942 | Batches = 2 | Samples = 60
+[Pretrain-Set   40] Loss = 2.2417 | Batches = 2 | Samples = 60
+[Pretrain-Set   41] Loss = 2.2464 | Batches = 2 | Samples = 60
+[Pretrain-Set   42] Loss = 2.1329 | Batches = 2 | Samples = 60
+[Pretrain-Set   43] Loss = 2.2751 | Batches = 2 | Samples = 60
+[Pretrain-Set   44] Loss = 2.2314 | Batches = 2 | Samples = 60
+[Pretrain-Set   45] Loss = 2.2893 | Batches = 2 | Samples = 60
+[Pretrain-Set   46] Loss = 2.2108 | Batches = 2 | Samples = 60
+[Pretrain-Set   47] Loss = 2.2775 | Batches = 2 | Samples = 60
+[Pretrain-Set   48] Loss = 2.2179 | Batches = 2 | Samples = 60
+[Pretrain-Set   49] Loss = 2.2221 | Batches = 2 | Samples = 60
+[Pretrain-Set   50] Loss = 2.1267 | Batches = 2 | Samples = 60
+[Pretrain-Set   51] Loss = 2.2124 | Batches = 2 | Samples = 60
+[Pretrain-Set   52] Loss = 2.2482 | Batches = 2 | Samples = 60
+[Pretrain-Set   53] Loss = 2.2235 | Batches = 2 | Samples = 60
+[Pretrain-Set   54] Loss = 2.2687 | Batches = 2 | Samples = 60
+[Pretrain-Set   55] Loss = 2.1953 | Batches = 2 | Samples = 60
+[Pretrain-Set   56] Loss = 2.2614 | Batches = 2 | Samples = 60
+[Pretrain-Set   57] Loss = 2.2828 | Batches = 2 | Samples = 60
+[Pretrain-Set   58] Loss = 2.2387 | Batches = 2 | Samples = 60
+[Pretrain-Set   59] Loss = 2.2132 | Batches = 2 | Samples = 60
+[Pretrain-Set   60] Loss = 2.1632 | Batches = 2 | Samples = 60
+[Pretrain-Set   61] Loss = 2.2029 | Batches = 2 | Samples = 60
+[Pretrain-Set   62] Loss = 2.1426 | Batches = 2 | Samples = 60
+[Pretrain-Set   63] Loss = 2.2693 | Batches = 2 | Samples = 60
+[Pretrain-Set   64] Loss = 2.2057 | Batches = 2 | Samples = 60
+[Pretrain-Set   65] Loss = 2.2788 | Batches = 2 | Samples = 60
+[Pretrain-Set   66] Loss = 2.2063 | Batches = 2 | Samples = 60
+[Pretrain-Set   67] Loss = 2.2552 | Batches = 2 | Samples = 60
+[Pretrain-Set   68] Loss = 2.2374 | Batches = 2 | Samples = 60
+[Pretrain-Set   69] Loss = 2.2879 | Batches = 2 | Samples = 60
+[Pretrain-Set   70] Loss = 2.1655 | Batches = 2 | Samples = 60
+[Pretrain-Set   71] Loss = 2.1330 | Batches = 2 | Samples = 60
+[Pretrain-Set   72] Loss = 2.2647 | Batches = 2 | Samples = 60
+[Pretrain-Set   73] Loss = 2.2167 | Batches = 2 | Samples = 60
+[Pretrain-Set   74] Loss = 2.2179 | Batches = 2 | Samples = 60
+[Pretrain-Set   75] Loss = 2.1798 | Batches = 2 | Samples = 60
+[Pretrain-Set   76] Loss = 2.1910 | Batches = 2 | Samples = 60
+[Pretrain-Set   77] Loss = 2.1312 | Batches = 2 | Samples = 60
+[Pretrain-Set   78] Loss = 2.1915 | Batches = 2 | Samples = 60
+[Pretrain-Set   79] Loss = 2.1856 | Batches = 2 | Samples = 60
+[Pretrain-Set   80] Loss = 2.2195 | Batches = 2 | Samples = 60
+[Pretrain-Set   81] Loss = 2.1704 | Batches = 2 | Samples = 60
+[Pretrain-Set   82] Loss = 2.2709 | Batches = 2 | Samples = 60
+[Pretrain-Set   83] Loss = 2.1505 | Batches = 2 | Samples = 60
+[Pretrain-Set   84] Loss = 2.2132 | Batches = 2 | Samples = 60
+[Pretrain-Set   85] Loss = 2.2244 | Batches = 2 | Samples = 60
+[Pretrain-Set   86] Loss = 2.1966 | Batches = 2 | Samples = 60
+[Pretrain-Set   87] Loss = 2.1462 | Batches = 2 | Samples = 60
+[Pretrain-Set   88] Loss = 2.1871 | Batches = 2 | Samples = 60
+[Pretrain-Set   89] Loss = 2.1542 | Batches = 2 | Samples = 60
+[Pretrain-Set   90] Loss = 2.2203 | Batches = 2 | Samples = 60
+[Pretrain-Set   91] Loss = 2.2423 | Batches = 2 | Samples = 60
+[Pretrain-Set   92] Loss = 2.1606 | Batches = 2 | Samples = 60
+[Pretrain-Set   93] Loss = 2.1409 | Batches = 2 | Samples = 60
+[Pretrain-Set   94] Loss = 2.1905 | Batches = 2 | Samples = 60
+[Pretrain-Set   95] Loss = 2.0699 | Batches = 2 | Samples = 60
+[Pretrain-Set   96] Loss = 2.1462 | Batches = 2 | Samples = 60
+[Pretrain-Set   97] Loss = 2.0888 | Batches = 2 | Samples = 60
+[Pretrain-Set   98] Loss = 2.2268 | Batches = 2 | Samples = 60
+[Pretrain-Set   99] Loss = 2.0256 | Batches = 2 | Samples = 60
+[Pretrain-Set  100] Loss = 2.1962 | Batches = 2 | Samples = 60
+Saved pretrained model to: pretrained/C762B92AA61786DF9CC4D6EAB718BDB8.pth
+
+Pretraining completed in 1091.6 seconds (18.2 minutes)
+Final List Loss: 2.8420
+Final Set Loss: 2.1962
+
+============================================================
+PRETRAINING: 5% Edge Drop
+============================================================
+Initializing Runner...
+Loading syn1 dataset
+This model obtained: Train Acc: 0.9696, Val Acc: 1.0000, Test Acc: 1.0000.
+Eval Seeds range(400, 700, 5)
+Prediction Error for Whole Graph: 0.03571428571428571
+Prediction Error for Eval Seeds: 0.016666666666666666
+N-hop 3
+Max Size in SG 201
+[CAUSAL] Causal mechanism check passed: use_causal=True
+[CAUSAL] Initialized NodeLevelCausalExplainer with 4 classes, weight 0.3
+[CAUSAL] Initialized causal reward calculator with weight 0.3
+[CAUSAL] GNN model frozen for causal interventions
+[DEBUG] Causal data set: target_classes shape=torch.Size([60]), seed_nodes count=60
+[CAUSAL] Causal mechanism enabled
+[CAUSAL] Task type: node_task
+[CAUSAL] Causal weight: 0.3
+
+Starting pretraining with 5% edge drop...
+Starting List-based pretraining...
+[Pretrain Edge Drop] Probability: 0.050
+[Pretrain Edge Drop] Edges: 4110 -> 3900 (retained: 94.9%)
+[Pretrain-List   1] Loss = 3.5766 | Batches = 2 | Samples = 60
+[Pretrain-List   2] Loss = 3.4379 | Batches = 2 | Samples = 60
+[Pretrain-List   3] Loss = 3.5008 | Batches = 2 | Samples = 60
+[Pretrain-List   4] Loss = 3.4150 | Batches = 2 | Samples = 60
+[Pretrain-List   5] Loss = 3.2769 | Batches = 2 | Samples = 60
+[Pretrain-List   6] Loss = 3.2922 | Batches = 2 | Samples = 60
+[Pretrain-List   7] Loss = 3.1972 | Batches = 2 | Samples = 60
+[Pretrain-List   8] Loss = 3.1045 | Batches = 2 | Samples = 60
+[Pretrain-List   9] Loss = 3.0699 | Batches = 2 | Samples = 60
+[Pretrain-List  10] Loss = 3.0993 | Batches = 2 | Samples = 60
+[Pretrain-List  11] Loss = 3.0346 | Batches = 2 | Samples = 60
+[Pretrain-List  12] Loss = 3.1297 | Batches = 2 | Samples = 60
+[Pretrain-List  13] Loss = 3.0895 | Batches = 2 | Samples = 60
+[Pretrain-List  14] Loss = 3.0556 | Batches = 2 | Samples = 60
+[Pretrain-List  15] Loss = 3.0429 | Batches = 2 | Samples = 60
+[Pretrain-List  16] Loss = 2.9033 | Batches = 2 | Samples = 60
+[Pretrain-List  17] Loss = 3.0573 | Batches = 2 | Samples = 60
+[Pretrain-List  18] Loss = 3.0270 | Batches = 2 | Samples = 60
+[Pretrain-List  19] Loss = 2.9585 | Batches = 2 | Samples = 60
+[Pretrain-List  20] Loss = 2.9149 | Batches = 2 | Samples = 60
+[Pretrain-List  21] Loss = 2.8631 | Batches = 2 | Samples = 60
+[Pretrain-List  22] Loss = 2.9955 | Batches = 2 | Samples = 60
+[Pretrain-List  23] Loss = 2.9548 | Batches = 2 | Samples = 60
+[Pretrain-List  24] Loss = 2.9278 | Batches = 2 | Samples = 60
+[Pretrain-List  25] Loss = 2.9617 | Batches = 2 | Samples = 60
+[Pretrain-List  26] Loss = 2.9445 | Batches = 2 | Samples = 60
+[Pretrain-List  27] Loss = 2.8545 | Batches = 2 | Samples = 60
+[Pretrain-List  28] Loss = 2.8863 | Batches = 2 | Samples = 60
+[Pretrain-List  29] Loss = 2.8339 | Batches = 2 | Samples = 60
+[Pretrain-List  30] Loss = 2.8526 | Batches = 2 | Samples = 60
+[Pretrain-List  31] Loss = 2.7502 | Batches = 2 | Samples = 60
+[Pretrain-List  32] Loss = 2.9882 | Batches = 2 | Samples = 60
+[Pretrain-List  33] Loss = 2.7803 | Batches = 2 | Samples = 60
+[Pretrain-List  34] Loss = 2.8443 | Batches = 2 | Samples = 60
+[Pretrain-List  35] Loss = 2.8615 | Batches = 2 | Samples = 60
+[Pretrain-List  36] Loss = 2.9056 | Batches = 2 | Samples = 60
+[Pretrain-List  37] Loss = 2.9094 | Batches = 2 | Samples = 60
+[Pretrain-List  38] Loss = 2.9497 | Batches = 2 | Samples = 60
+[Pretrain-List  39] Loss = 2.8924 | Batches = 2 | Samples = 60
+[Pretrain-List  40] Loss = 2.8378 | Batches = 2 | Samples = 60
+[Pretrain-List  41] Loss = 2.9013 | Batches = 2 | Samples = 60
+[Pretrain-List  42] Loss = 2.8269 | Batches = 2 | Samples = 60
+[Pretrain-List  43] Loss = 2.7491 | Batches = 2 | Samples = 60
+[Pretrain-List  44] Loss = 2.8242 | Batches = 2 | Samples = 60
+[Pretrain-List  45] Loss = 2.8333 | Batches = 2 | Samples = 60
+[Pretrain-List  46] Loss = 2.8175 | Batches = 2 | Samples = 60
+[Pretrain-List  47] Loss = 2.7946 | Batches = 2 | Samples = 60
+[Pretrain-List  48] Loss = 2.7232 | Batches = 2 | Samples = 60
+[Pretrain-List  49] Loss = 2.7967 | Batches = 2 | Samples = 60
+[Pretrain-List  50] Loss = 2.8398 | Batches = 2 | Samples = 60
+Starting Set-based pretraining...
+[Pretrain Edge Drop] Probability: 0.050
+[Pretrain Edge Drop] Edges: 4110 -> 3903 (retained: 95.0%)
+[Pretrain-Set    1] Loss = 2.2918 | Batches = 2 | Samples = 60
+[Pretrain-Set    2] Loss = 2.2322 | Batches = 2 | Samples = 60
+[Pretrain-Set    3] Loss = 2.2617 | Batches = 2 | Samples = 60
+[Pretrain-Set    4] Loss = 2.2633 | Batches = 2 | Samples = 60
+[Pretrain-Set    5] Loss = 2.2305 | Batches = 2 | Samples = 60
+[Pretrain-Set    6] Loss = 2.2793 | Batches = 2 | Samples = 60
+[Pretrain-Set    7] Loss = 2.2056 | Batches = 2 | Samples = 60
+[Pretrain-Set    8] Loss = 2.2422 | Batches = 2 | Samples = 60
+[Pretrain-Set    9] Loss = 2.2514 | Batches = 2 | Samples = 60
+[Pretrain-Set   10] Loss = 2.1455 | Batches = 2 | Samples = 60
+[Pretrain-Set   11] Loss = 2.2691 | Batches = 2 | Samples = 60
+[Pretrain-Set   12] Loss = 2.2330 | Batches = 2 | Samples = 60
+[Pretrain-Set   13] Loss = 2.2312 | Batches = 2 | Samples = 60
+[Pretrain-Set   14] Loss = 2.1879 | Batches = 2 | Samples = 60
+[Pretrain-Set   15] Loss = 2.2506 | Batches = 2 | Samples = 60
+[Pretrain-Set   16] Loss = 2.1729 | Batches = 2 | Samples = 60
+[Pretrain-Set   17] Loss = 2.3070 | Batches = 2 | Samples = 60
+[Pretrain-Set   18] Loss = 2.2947 | Batches = 2 | Samples = 60
+[Pretrain-Set   19] Loss = 2.2372 | Batches = 2 | Samples = 60
+[Pretrain-Set   20] Loss = 2.1499 | Batches = 2 | Samples = 60
+[Pretrain-Set   21] Loss = 2.2192 | Batches = 2 | Samples = 60
+[Pretrain-Set   22] Loss = 2.1853 | Batches = 2 | Samples = 60
+[Pretrain-Set   23] Loss = 2.2609 | Batches = 2 | Samples = 60
+[Pretrain-Set   24] Loss = 2.1969 | Batches = 2 | Samples = 60
+[Pretrain-Set   25] Loss = 2.1926 | Batches = 2 | Samples = 60
+[Pretrain-Set   26] Loss = 2.2646 | Batches = 2 | Samples = 60
+[Pretrain-Set   27] Loss = 2.2357 | Batches = 2 | Samples = 60
+[Pretrain-Set   28] Loss = 2.2555 | Batches = 2 | Samples = 60
+[Pretrain-Set   29] Loss = 2.2690 | Batches = 2 | Samples = 60
+[Pretrain-Set   30] Loss = 2.2730 | Batches = 2 | Samples = 60
+[Pretrain-Set   31] Loss = 2.2305 | Batches = 2 | Samples = 60
+[Pretrain-Set   32] Loss = 2.2248 | Batches = 2 | Samples = 60
+[Pretrain-Set   33] Loss = 2.2086 | Batches = 2 | Samples = 60
+[Pretrain-Set   34] Loss = 2.1999 | Batches = 2 | Samples = 60
+[Pretrain-Set   35] Loss = 2.2169 | Batches = 2 | Samples = 60
+[Pretrain-Set   36] Loss = 2.2219 | Batches = 2 | Samples = 60
+[Pretrain-Set   37] Loss = 2.2035 | Batches = 2 | Samples = 60
+[Pretrain-Set   38] Loss = 2.2723 | Batches = 2 | Samples = 60
+[Pretrain-Set   39] Loss = 2.2113 | Batches = 2 | Samples = 60
+[Pretrain-Set   40] Loss = 2.1809 | Batches = 2 | Samples = 60
+[Pretrain-Set   41] Loss = 2.2004 | Batches = 2 | Samples = 60
+[Pretrain-Set   42] Loss = 2.2402 | Batches = 2 | Samples = 60
+[Pretrain-Set   43] Loss = 2.2118 | Batches = 2 | Samples = 60
+[Pretrain-Set   44] Loss = 2.1922 | Batches = 2 | Samples = 60
+[Pretrain-Set   45] Loss = 2.1230 | Batches = 2 | Samples = 60
+[Pretrain-Set   46] Loss = 2.2403 | Batches = 2 | Samples = 60
+[Pretrain-Set   47] Loss = 2.1844 | Batches = 2 | Samples = 60
+[Pretrain-Set   48] Loss = 2.2345 | Batches = 2 | Samples = 60
+[Pretrain-Set   49] Loss = 2.2007 | Batches = 2 | Samples = 60
+[Pretrain-Set   50] Loss = 2.1726 | Batches = 2 | Samples = 60
+[Pretrain-Set   51] Loss = 2.2413 | Batches = 2 | Samples = 60
+[Pretrain-Set   52] Loss = 2.2619 | Batches = 2 | Samples = 60
+[Pretrain-Set   53] Loss = 2.2101 | Batches = 2 | Samples = 60
+[Pretrain-Set   54] Loss = 2.2608 | Batches = 2 | Samples = 60
+[Pretrain-Set   55] Loss = 2.1959 | Batches = 2 | Samples = 60
+[Pretrain-Set   56] Loss = 2.1226 | Batches = 2 | Samples = 60
+[Pretrain-Set   57] Loss = 2.2002 | Batches = 2 | Samples = 60
+[Pretrain-Set   58] Loss = 2.1652 | Batches = 2 | Samples = 60
+[Pretrain-Set   59] Loss = 2.1317 | Batches = 2 | Samples = 60
+[Pretrain-Set   60] Loss = 2.1871 | Batches = 2 | Samples = 60
+[Pretrain-Set   61] Loss = 2.1784 | Batches = 2 | Samples = 60
+[Pretrain-Set   62] Loss = 2.1881 | Batches = 2 | Samples = 60
+[Pretrain-Set   63] Loss = 2.1506 | Batches = 2 | Samples = 60
+[Pretrain-Set   64] Loss = 2.2201 | Batches = 2 | Samples = 60
+[Pretrain-Set   65] Loss = 2.1165 | Batches = 2 | Samples = 60
+[Pretrain-Set   66] Loss = 2.1180 | Batches = 2 | Samples = 60
+[Pretrain-Set   67] Loss = 2.1886 | Batches = 2 | Samples = 60
+[Pretrain-Set   68] Loss = 2.2158 | Batches = 2 | Samples = 60
+[Pretrain-Set   69] Loss = 2.1807 | Batches = 2 | Samples = 60
+[Pretrain-Set   70] Loss = 2.2099 | Batches = 2 | Samples = 60
+[Pretrain-Set   71] Loss = 2.1728 | Batches = 2 | Samples = 60
+[Pretrain-Set   72] Loss = 2.1492 | Batches = 2 | Samples = 60
+[Pretrain-Set   73] Loss = 2.1778 | Batches = 2 | Samples = 60
+[Pretrain-Set   74] Loss = 2.0957 | Batches = 2 | Samples = 60
+[Pretrain-Set   75] Loss = 2.1566 | Batches = 2 | Samples = 60
+[Pretrain-Set   76] Loss = 2.2357 | Batches = 2 | Samples = 60
+[Pretrain-Set   77] Loss = 2.2244 | Batches = 2 | Samples = 60
+[Pretrain-Set   78] Loss = 2.1277 | Batches = 2 | Samples = 60
+[Pretrain-Set   79] Loss = 2.2046 | Batches = 2 | Samples = 60
+[Pretrain-Set   80] Loss = 2.0799 | Batches = 2 | Samples = 60
+[Pretrain-Set   81] Loss = 2.0879 | Batches = 2 | Samples = 60
+[Pretrain-Set   82] Loss = 2.1916 | Batches = 2 | Samples = 60
+[Pretrain-Set   83] Loss = 2.1897 | Batches = 2 | Samples = 60
+[Pretrain-Set   84] Loss = 2.1510 | Batches = 2 | Samples = 60
+[Pretrain-Set   85] Loss = 2.2087 | Batches = 2 | Samples = 60
+[Pretrain-Set   86] Loss = 2.1835 | Batches = 2 | Samples = 60
+[Pretrain-Set   87] Loss = 2.1444 | Batches = 2 | Samples = 60
+[Pretrain-Set   88] Loss = 2.2203 | Batches = 2 | Samples = 60
+[Pretrain-Set   89] Loss = 2.0969 | Batches = 2 | Samples = 60
+[Pretrain-Set   90] Loss = 2.1706 | Batches = 2 | Samples = 60
+[Pretrain-Set   91] Loss = 2.1747 | Batches = 2 | Samples = 60
+[Pretrain-Set   92] Loss = 2.1516 | Batches = 2 | Samples = 60
+[Pretrain-Set   93] Loss = 2.1911 | Batches = 2 | Samples = 60
+[Pretrain-Set   94] Loss = 2.1015 | Batches = 2 | Samples = 60
+[Pretrain-Set   95] Loss = 2.1793 | Batches = 2 | Samples = 60
+[Pretrain-Set   96] Loss = 2.2045 | Batches = 2 | Samples = 60
+[Pretrain-Set   97] Loss = 2.1140 | Batches = 2 | Samples = 60
+[Pretrain-Set   98] Loss = 2.1482 | Batches = 2 | Samples = 60
+[Pretrain-Set   99] Loss = 2.1287 | Batches = 2 | Samples = 60
+[Pretrain-Set  100] Loss = 2.2210 | Batches = 2 | Samples = 60
+Saved pretrained model to: pretrained/44E178E68AA3A4219B9E1A17B6AB8A5D.pth
+
+Pretraining completed in 1065.2 seconds (17.8 minutes)
+Final List Loss: 2.8398
+Final Set Loss: 2.2210
+
+============================================================
+PRETRAINING: 10% Edge Drop
+============================================================
+Initializing Runner...
+Loading syn1 dataset
+This model obtained: Train Acc: 0.9696, Val Acc: 1.0000, Test Acc: 1.0000.
+Eval Seeds range(400, 700, 5)
+Prediction Error for Whole Graph: 0.03571428571428571
+Prediction Error for Eval Seeds: 0.016666666666666666
+N-hop 3
+Max Size in SG 201
+[CAUSAL] Causal mechanism check passed: use_causal=True
+[CAUSAL] Initialized NodeLevelCausalExplainer with 4 classes, weight 0.3
+[CAUSAL] Initialized causal reward calculator with weight 0.3
+[CAUSAL] GNN model frozen for causal interventions
+[DEBUG] Causal data set: target_classes shape=torch.Size([60]), seed_nodes count=60
+[CAUSAL] Causal mechanism enabled
+[CAUSAL] Task type: node_task
+[CAUSAL] Causal weight: 0.3
+
+Starting pretraining with 10% edge drop...
+Starting List-based pretraining...
+[Pretrain Edge Drop] Probability: 0.100
+[Pretrain Edge Drop] Edges: 4110 -> 3717 (retained: 90.4%)
+[Pretrain-List   1] Loss = 3.4705 | Batches = 2 | Samples = 60
+[Pretrain-List   2] Loss = 3.3383 | Batches = 2 | Samples = 60
+[Pretrain-List   3] Loss = 3.2664 | Batches = 2 | Samples = 60
+[Pretrain-List   4] Loss = 3.1980 | Batches = 2 | Samples = 60
+[Pretrain-List   5] Loss = 3.1626 | Batches = 2 | Samples = 60
+[Pretrain-List   6] Loss = 3.2290 | Batches = 2 | Samples = 60
+[Pretrain-List   7] Loss = 3.1291 | Batches = 2 | Samples = 60
+[Pretrain-List   8] Loss = 3.0505 | Batches = 2 | Samples = 60
+[Pretrain-List   9] Loss = 3.1167 | Batches = 2 | Samples = 60
+[Pretrain-List  10] Loss = 2.9874 | Batches = 2 | Samples = 60
+[Pretrain-List  11] Loss = 3.0176 | Batches = 2 | Samples = 60
+[Pretrain-List  12] Loss = 3.0100 | Batches = 2 | Samples = 60
+[Pretrain-List  13] Loss = 2.8921 | Batches = 2 | Samples = 60
+[Pretrain-List  14] Loss = 2.9356 | Batches = 2 | Samples = 60
+[Pretrain-List  15] Loss = 3.0142 | Batches = 2 | Samples = 60
+[Pretrain-List  16] Loss = 2.8669 | Batches = 2 | Samples = 60
+[Pretrain-List  17] Loss = 2.8552 | Batches = 2 | Samples = 60
+[Pretrain-List  18] Loss = 2.8883 | Batches = 2 | Samples = 60
+[Pretrain-List  19] Loss = 2.9663 | Batches = 2 | Samples = 60
+[Pretrain-List  20] Loss = 2.9596 | Batches = 2 | Samples = 60
+[Pretrain-List  21] Loss = 2.9331 | Batches = 2 | Samples = 60
+[Pretrain-List  22] Loss = 2.9997 | Batches = 2 | Samples = 60
+[Pretrain-List  23] Loss = 2.8355 | Batches = 2 | Samples = 60
+[Pretrain-List  24] Loss = 2.8237 | Batches = 2 | Samples = 60
+[Pretrain-List  25] Loss = 2.8967 | Batches = 2 | Samples = 60
+[Pretrain-List  26] Loss = 2.9202 | Batches = 2 | Samples = 60
+[Pretrain-List  27] Loss = 2.8418 | Batches = 2 | Samples = 60
+[Pretrain-List  28] Loss = 2.8606 | Batches = 2 | Samples = 60
+[Pretrain-List  29] Loss = 2.8337 | Batches = 2 | Samples = 60
+[Pretrain-List  30] Loss = 2.8629 | Batches = 2 | Samples = 60
+[Pretrain-List  31] Loss = 2.8954 | Batches = 2 | Samples = 60
+[Pretrain-List  32] Loss = 2.8467 | Batches = 2 | Samples = 60
+[Pretrain-List  33] Loss = 2.8181 | Batches = 2 | Samples = 60
+[Pretrain-List  34] Loss = 2.7157 | Batches = 2 | Samples = 60
+[Pretrain-List  35] Loss = 2.9215 | Batches = 2 | Samples = 60
+[Pretrain-List  36] Loss = 2.8000 | Batches = 2 | Samples = 60
+[Pretrain-List  37] Loss = 2.9034 | Batches = 2 | Samples = 60
+[Pretrain-List  38] Loss = 2.8292 | Batches = 2 | Samples = 60
+[Pretrain-List  39] Loss = 2.7582 | Batches = 2 | Samples = 60
+[Pretrain-List  40] Loss = 2.7730 | Batches = 2 | Samples = 60
+[Pretrain-List  41] Loss = 2.8160 | Batches = 2 | Samples = 60
+[Pretrain-List  42] Loss = 2.8136 | Batches = 2 | Samples = 60
+[Pretrain-List  43] Loss = 2.8367 | Batches = 2 | Samples = 60
+[Pretrain-List  44] Loss = 2.7467 | Batches = 2 | Samples = 60
+[Pretrain-List  45] Loss = 2.8275 | Batches = 2 | Samples = 60
+[Pretrain-List  46] Loss = 2.8719 | Batches = 2 | Samples = 60
+[Pretrain-List  47] Loss = 2.8263 | Batches = 2 | Samples = 60
+[Pretrain-List  48] Loss = 2.6667 | Batches = 2 | Samples = 60
+[Pretrain-List  49] Loss = 2.8819 | Batches = 2 | Samples = 60
+[Pretrain-List  50] Loss = 2.7300 | Batches = 2 | Samples = 60
+Starting Set-based pretraining...
+[Pretrain Edge Drop] Probability: 0.100
+[Pretrain Edge Drop] Edges: 4110 -> 3716 (retained: 90.4%)
+[Pretrain-Set    1] Loss = 2.3417 | Batches = 2 | Samples = 60
+[Pretrain-Set    2] Loss = 2.2738 | Batches = 2 | Samples = 60
+[Pretrain-Set    3] Loss = 2.2290 | Batches = 2 | Samples = 60
+[Pretrain-Set    4] Loss = 2.2602 | Batches = 2 | Samples = 60
+[Pretrain-Set    5] Loss = 2.1260 | Batches = 2 | Samples = 60
+[Pretrain-Set    6] Loss = 2.2917 | Batches = 2 | Samples = 60
+[Pretrain-Set    7] Loss = 2.1696 | Batches = 2 | Samples = 60
+[Pretrain-Set    8] Loss = 2.2374 | Batches = 2 | Samples = 60
+[Pretrain-Set    9] Loss = 2.2594 | Batches = 2 | Samples = 60
+[Pretrain-Set   10] Loss = 2.2114 | Batches = 2 | Samples = 60
+[Pretrain-Set   11] Loss = 2.2427 | Batches = 2 | Samples = 60
+[Pretrain-Set   12] Loss = 2.2179 | Batches = 2 | Samples = 60
+[Pretrain-Set   13] Loss = 2.2653 | Batches = 2 | Samples = 60
+[Pretrain-Set   14] Loss = 2.2267 | Batches = 2 | Samples = 60
+[Pretrain-Set   15] Loss = 2.3090 | Batches = 2 | Samples = 60
+[Pretrain-Set   16] Loss = 2.2809 | Batches = 2 | Samples = 60
+[Pretrain-Set   17] Loss = 2.2324 | Batches = 2 | Samples = 60
+[Pretrain-Set   18] Loss = 2.2052 | Batches = 2 | Samples = 60
+[Pretrain-Set   19] Loss = 2.1532 | Batches = 2 | Samples = 60
+[Pretrain-Set   20] Loss = 2.2690 | Batches = 2 | Samples = 60
+[Pretrain-Set   21] Loss = 2.1922 | Batches = 2 | Samples = 60
+[Pretrain-Set   22] Loss = 2.2666 | Batches = 2 | Samples = 60
+[Pretrain-Set   23] Loss = 2.2175 | Batches = 2 | Samples = 60
+[Pretrain-Set   24] Loss = 2.2093 | Batches = 2 | Samples = 60
+[Pretrain-Set   25] Loss = 2.2298 | Batches = 2 | Samples = 60
+[Pretrain-Set   26] Loss = 2.2218 | Batches = 2 | Samples = 60
+[Pretrain-Set   27] Loss = 2.2605 | Batches = 2 | Samples = 60
+[Pretrain-Set   28] Loss = 2.2819 | Batches = 2 | Samples = 60
+[Pretrain-Set   29] Loss = 2.2803 | Batches = 2 | Samples = 60
+[Pretrain-Set   30] Loss = 2.1205 | Batches = 2 | Samples = 60
+[Pretrain-Set   31] Loss = 2.1980 | Batches = 2 | Samples = 60
+[Pretrain-Set   32] Loss = 2.2380 | Batches = 2 | Samples = 60
+[Pretrain-Set   33] Loss = 2.1616 | Batches = 2 | Samples = 60
+[Pretrain-Set   34] Loss = 2.2355 | Batches = 2 | Samples = 60
+[Pretrain-Set   35] Loss = 2.2296 | Batches = 2 | Samples = 60
+[Pretrain-Set   36] Loss = 2.1595 | Batches = 2 | Samples = 60
+[Pretrain-Set   37] Loss = 2.2093 | Batches = 2 | Samples = 60
+[Pretrain-Set   38] Loss = 2.2095 | Batches = 2 | Samples = 60
+[Pretrain-Set   39] Loss = 2.2365 | Batches = 2 | Samples = 60
+[Pretrain-Set   40] Loss = 2.1774 | Batches = 2 | Samples = 60
+[Pretrain-Set   41] Loss = 2.2565 | Batches = 2 | Samples = 60
+[Pretrain-Set   42] Loss = 2.1811 | Batches = 2 | Samples = 60
+[Pretrain-Set   43] Loss = 2.1998 | Batches = 2 | Samples = 60
+[Pretrain-Set   44] Loss = 2.1886 | Batches = 2 | Samples = 60
+[Pretrain-Set   45] Loss = 2.1934 | Batches = 2 | Samples = 60
+[Pretrain-Set   46] Loss = 2.1663 | Batches = 2 | Samples = 60
+[Pretrain-Set   47] Loss = 2.1044 | Batches = 2 | Samples = 60
+[Pretrain-Set   48] Loss = 2.1496 | Batches = 2 | Samples = 60
+[Pretrain-Set   49] Loss = 2.1337 | Batches = 2 | Samples = 60
+[Pretrain-Set   50] Loss = 2.1490 | Batches = 2 | Samples = 60
+[Pretrain-Set   51] Loss = 2.1903 | Batches = 2 | Samples = 60
+[Pretrain-Set   52] Loss = 2.1449 | Batches = 2 | Samples = 60
+[Pretrain-Set   53] Loss = 2.1217 | Batches = 2 | Samples = 60
+[Pretrain-Set   54] Loss = 2.1875 | Batches = 2 | Samples = 60
+[Pretrain-Set   55] Loss = 2.2049 | Batches = 2 | Samples = 60
+[Pretrain-Set   56] Loss = 2.1371 | Batches = 2 | Samples = 60
+[Pretrain-Set   57] Loss = 2.2043 | Batches = 2 | Samples = 60
+[Pretrain-Set   58] Loss = 2.1741 | Batches = 2 | Samples = 60
+[Pretrain-Set   59] Loss = 2.1295 | Batches = 2 | Samples = 60
+[Pretrain-Set   60] Loss = 2.1779 | Batches = 2 | Samples = 60
+[Pretrain-Set   61] Loss = 2.0458 | Batches = 2 | Samples = 60
+[Pretrain-Set   62] Loss = 2.2091 | Batches = 2 | Samples = 60
+[Pretrain-Set   63] Loss = 2.1405 | Batches = 2 | Samples = 60
+[Pretrain-Set   64] Loss = 2.1289 | Batches = 2 | Samples = 60
+[Pretrain-Set   65] Loss = 2.0853 | Batches = 2 | Samples = 60
+[Pretrain-Set   66] Loss = 2.0954 | Batches = 2 | Samples = 60
+[Pretrain-Set   67] Loss = 2.1895 | Batches = 2 | Samples = 60
+[Pretrain-Set   68] Loss = 2.1433 | Batches = 2 | Samples = 60
+[Pretrain-Set   69] Loss = 2.2379 | Batches = 2 | Samples = 60
+[Pretrain-Set   70] Loss = 2.1398 | Batches = 2 | Samples = 60
+[Pretrain-Set   71] Loss = 2.1572 | Batches = 2 | Samples = 60
+[Pretrain-Set   72] Loss = 2.2503 | Batches = 2 | Samples = 60
+[Pretrain-Set   73] Loss = 2.1890 | Batches = 2 | Samples = 60
+[Pretrain-Set   74] Loss = 2.1169 | Batches = 2 | Samples = 60
+[Pretrain-Set   75] Loss = 2.0940 | Batches = 2 | Samples = 60
+
+✗ Test failed with error: dimension mismatch

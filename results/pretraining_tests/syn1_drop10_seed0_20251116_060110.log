@@ -1,0 +1,168 @@
+============================================================
+PRETRAINING TEST RUNNER
+============================================================
+Start Time: 2025-11-16 06:01:10
+Dataset: syn1
+Seed: 0
+Edge Drop Probability: 0.1
+Pretrain Iterations: List=10, Set=10
+PPO Test Epochs: 2
+Robustness Eval: Enabled
+Log File: results/pretraining_tests/syn1_drop10_seed0_20251116_060110.log
+SLURM Job ID: 12859578
+============================================================
+
+
+============================================================
+PHASE 1: PRETRAINING
+============================================================
+Initializing Runner...
+Loading syn1 dataset
+This model obtained: Train Acc: 0.9696, Val Acc: 1.0000, Test Acc: 1.0000.
+Eval Seeds range(400, 700, 5)
+Prediction Error for Whole Graph: 0.03571428571428571
+Prediction Error for Eval Seeds: 0.016666666666666666
+N-hop 3
+Max Size in SG 201
+[CAUSAL] Causal mechanism check passed: use_causal=True
+[CAUSAL] Initialized NodeLevelCausalExplainer with 4 classes, weight 0.5
+[CAUSAL] Initialized causal reward calculator with weight 0.5
+[CAUSAL] GNN model frozen for causal interventions
+[DEBUG] Causal data set: target_classes shape=torch.Size([60]), seed_nodes count=60
+[CAUSAL] Causal mechanism enabled
+[CAUSAL] Task type: node_task
+[CAUSAL] Causal weight: 0.5
+
+Starting pretraining phase...
+CODE: 126D7AB7A6EBD0E608EEE9C9D0E6638A
+Load the pre-trained model!
+
+Pretraining completed in 0.0 seconds (0.0 minutes)
+
+Evaluating pretrained model...
+n_id 400 len 8 p_loss=1.57 size_loss=0.14 sim_loss=0.01 r_p=0.40 sgs [0, 3, -340, -160, -319, -391, -210, -307]
+n_id 405 len 10 p_loss=0.44 size_loss=0.18 sim_loss=0.01 r_p=0.30 sgs [0, 1, -342, -130, 3, -378, -322, -289, -250, -167]
+n_id 410 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.00 r_p=0.30 sgs [0, 4, 1, 3, 2, -344, -302, -367]
+n_id 415 len 8 p_loss=2.57 size_loss=0.16 sim_loss=0.01 r_p=0.50 sgs [0, -346, -400, -232, -316, -372, -246, -354]
+n_id 420 len 8 p_loss=1.30 size_loss=0.14 sim_loss=0.01 r_p=0.40 sgs [0, 4, -348, -202, -142, -252, -220, 160]
+n_id 425 len 9 p_loss=1.26 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, -350, 1, -261, -245, -353, -281, -130, -174]
+n_id 430 len 8 p_loss=0.26 size_loss=0.18 sim_loss=0.01 r_p=0.20 sgs [0, 3, 4, 2, -352, 1, -339, -380]
+n_id 435 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.00 r_p=0.30 sgs [0, 4, 3, 2, 1, -354, -423, -373]
+n_id 440 len 8 p_loss=1.49 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 4, -356, -181, -256, -401, -422, -413]
+n_id 445 len 9 p_loss=1.67 size_loss=0.18 sim_loss=0.01 r_p=0.40 sgs [0, -358, 1, -390, 2, 4, -430, -120, -436]
+n_id 450 len 8 p_loss=1.48 size_loss=0.16 sim_loss=0.01 r_p=0.40 sgs [0, -360, -384, -376, 4, -249, -354, -433]
+n_id 455 len 10 p_loss=0.33 size_loss=0.22 sim_loss=0.01 r_p=0.30 sgs [0, 3, 4, 1, 2, -362, -395, -337, -450, -206]
+n_id 460 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.00 r_p=0.30 sgs [0, 1, 2, 3, -364, 4, -188, -385]
+n_id 465 len 9 p_loss=1.48 size_loss=0.16 sim_loss=0.01 r_p=0.40 sgs [0, 4, -366, -426, -457, -193, -179, -351, -419]
+n_id 470 len 9 p_loss=2.36 size_loss=0.18 sim_loss=0.01 r_p=0.40 sgs [0, -368, -468, -464, -349, -425, -390, -458, -446]
+n_id 475 len 8 p_loss=0.61 size_loss=0.16 sim_loss=0.01 r_p=0.40 sgs [0, 4, 1, 3, 28, 25, 29, -370]
+n_id 480 len 8 p_loss=1.43 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 3, -372, -447, -458, -247, -444, -474]
+n_id 485 len 8 p_loss=1.99 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 3, 2, -374, -476, -474, -455, -289]
+n_id 490 len 8 p_loss=1.26 size_loss=0.14 sim_loss=0.01 r_p=0.40 sgs [0, 178, 177, 175, 179, -271, -376, -365]
+n_id 495 len 10 p_loss=2.35 size_loss=0.18 sim_loss=0.01 r_p=0.50 sgs [0, -378, -465, -201, -490, -456, -448, -298, -429, -296]
+n_id 500 len 8 p_loss=1.84 size_loss=0.18 sim_loss=0.02 r_p=0.30 sgs [0, 3, -22, 1, 2, -25, 4, -23]
+n_id 505 len 8 p_loss=1.27 size_loss=0.14 sim_loss=0.01 r_p=0.30 sgs [0, 1, -382, -226, -437, -211, -260, -494]
+n_id 510 len 8 p_loss=1.00 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 1, 4, -384, 3, -339, -404, -497]
+n_id 515 len 12 p_loss=1.66 size_loss=0.26 sim_loss=0.01 r_p=0.40 sgs [0, -386, -432, 1, -361, -508, -498, -509, -464, -476, -364, -426]
+n_id 520 len 8 p_loss=1.52 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 1, 2, 4, -388, -455, -493, -404]
+n_id 525 len 8 p_loss=1.37 size_loss=0.16 sim_loss=0.01 r_p=0.20 sgs [0, 4, 1, 3, -390, -240, -343, -505]
+n_id 530 len 8 p_loss=3.64 size_loss=0.14 sim_loss=0.02 r_p=0.30 sgs [0, -392, -265, -352, -431, -295, -254, -518]
+n_id 535 len 9 p_loss=1.00 size_loss=0.18 sim_loss=0.01 r_p=0.30 sgs [0, 4, 3, -394, -459, -239, 1, -449, -383]
+n_id 540 len 8 p_loss=0.26 size_loss=0.18 sim_loss=0.00 r_p=0.20 sgs [0, 1, 4, 3, 2, -396, -431, -379]
+n_id 545 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.00 r_p=0.30 sgs [0, 4, 1, 3, 2, -398, -496, -493]
+n_id 550 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.01 r_p=0.30 sgs [0, 3, 2, 1, 4, -400, -546, -477]
+n_id 555 len 9 p_loss=0.26 size_loss=0.20 sim_loss=0.00 r_p=0.30 sgs [0, 3, 1, 2, 4, -402, -505, -404, -544]
+n_id 560 len 8 p_loss=1.66 size_loss=0.16 sim_loss=0.02 r_p=0.40 sgs [0, 3, 1, 2, -404, -350, -511, -538]
+n_id 565 len 8 p_loss=1.05 size_loss=0.14 sim_loss=0.01 r_p=0.40 sgs [0, -406, -490, 3, -140, -561, -464, -415]
+n_id 570 len 8 p_loss=1.83 size_loss=0.16 sim_loss=0.01 r_p=0.20 sgs [0, 1, 3, 2, -408, -550, -465, -519]
+n_id 575 len 8 p_loss=0.35 size_loss=0.18 sim_loss=0.01 r_p=0.30 sgs [0, 4, 3, 2, 1, -410, -496, -549]
+n_id 580 len 9 p_loss=1.03 size_loss=0.18 sim_loss=0.01 r_p=0.30 sgs [0, 4, 1, 3, -365, -446, -570, -483, -574]
+n_id 585 len 8 p_loss=1.37 size_loss=0.16 sim_loss=0.01 r_p=0.20 sgs [0, 1, 3, -414, -390, 4, -377, -358]
+n_id 590 len 8 p_loss=2.36 size_loss=0.14 sim_loss=0.01 r_p=0.40 sgs [0, -416, -467, -530, -472, -85, -499, -350]
+n_id 595 len 8 p_loss=0.41 size_loss=0.14 sim_loss=0.01 r_p=0.30 sgs [0, -418, 3, -547, -296, -583, 1, -551]
+n_id 600 len 8 p_loss=1.50 size_loss=0.16 sim_loss=0.01 r_p=0.40 sgs [0, 4, -420, 1, -552, -484, -554, -302]
+n_id 605 len 10 p_loss=5.50 size_loss=0.20 sim_loss=0.02 r_p=0.50 sgs [0, -422, -506, -566, -465, -543, -374, 80, -575, -590]
+n_id 610 len 10 p_loss=0.44 size_loss=0.20 sim_loss=0.01 r_p=0.30 sgs [0, 4, 3, -424, -581, -486, -344, -331, -570, -543]
+n_id 615 len 8 p_loss=0.48 size_loss=0.14 sim_loss=0.01 r_p=0.30 sgs [0, 3, -426, -526, 2, 4, -570, -393]
+n_id 620 len 9 p_loss=1.68 size_loss=0.18 sim_loss=0.01 r_p=0.40 sgs [0, 4, 1, -428, -601, -619, -560, -491, -591]
+n_id 625 len 8 p_loss=0.30 size_loss=0.18 sim_loss=0.00 r_p=0.40 sgs [0, 1, 4, 2, 3, -430, -194, -191]
+n_id 630 len 11 p_loss=2.69 size_loss=0.20 sim_loss=0.01 r_p=0.40 sgs [0, 3, -174, 2, -171, -432, -486, -173, -90, -172, -342]
+n_id 635 len 8 p_loss=5.84 size_loss=0.16 sim_loss=0.02 r_p=0.30 sgs [0, -434, -569, -527, -619, -389, -374, -430]
+n_id 640 len 8 p_loss=0.44 size_loss=0.14 sim_loss=0.01 r_p=0.30 sgs [0, 3, 1, -436, -632, -385, -628, -629]
+n_id 645 len 9 p_loss=0.69 size_loss=0.16 sim_loss=0.01 r_p=0.30 sgs [0, 4, 3, -573, -640, -492, -537, -509, -608]
+avg_p_loss=1.32 avg_size_loss=0.17 avg_sim_loss=0.01 r_p=0.34
+[EVAL-Pretrained] AUC=0.7226105254696615
+
+============================================================
+PHASE 2: ROBUSTNESS EVALUATION
+============================================================
+
+Testing with drop probability: 0.00
+  [EdgeDrop-Test] Pred Loss: 1.2127 | Size Loss: 0.1713 | Total: 1.7465
+
+Testing with drop probability: 0.10
+  Edges: 4110 -> 3722 (retained: 90.6%)
+  [EdgeDrop-Test] Pred Loss: 1.0901 | Size Loss: 0.1773 | Total: 1.6081
+
+Testing with drop probability: 0.20
+  Edges: 4110 -> 3274 (retained: 79.7%)
+  [EdgeDrop-Test] Pred Loss: 1.2571 | Size Loss: 0.1753 | Total: 1.7974
+
+Testing with drop probability: 0.30
+  Edges: 4110 -> 2890 (retained: 70.3%)
+  [EdgeDrop-Test] Pred Loss: 1.1174 | Size Loss: 0.1700 | Total: 1.6400
+
+ΔLoss (drop 0.1 - baseline): -0.1384
+
+ΔLoss (drop 0.2 - baseline): +0.0509
+
+ΔLoss (drop 0.3 - baseline): -0.1065
+
+============================================================
+PHASE 3: PPO WARMUP TEST
+============================================================
+Running 2 PPO warmup epochs...
+
+[PPO-Test Epoch 1/2]
+[PPO Stats] Policy=0.2942, Value=0.3768, Entropy=1.6303, KL=2.9019, ClipFrac=0.999, EV=0.0004, GradNorm=0.1641, Updates=20, EpsPolicy=0.20, EpsValue=0.25
+  Reward: -0.010 | Policy Loss: 0.2942 | Length: 9.5
+  Early Stop Rate: 1.000 | Avg Size: 8.5
+  λ Schedule: size=0.0000, radius=0.0000, entropy=0.0030
+
+[PPO-Test Epoch 2/2]
+[PPO Stats] Policy=0.2924, Value=0.4202, Entropy=1.8312, KL=2.7149, ClipFrac=0.999, EV=0.0010, GradNorm=0.1893, Updates=20, EpsPolicy=0.20, EpsValue=0.25
+  Reward: -0.013 | Policy Loss: 0.2924 | Length: 9.7
+  Early Stop Rate: 1.000 | Avg Size: 8.7
+  λ Schedule: size=0.0000, radius=0.0000, entropy=0.0028
+
+
+============================================================
+TEST SUMMARY
+============================================================
+Dataset: syn1 | Seed: 0
+Edge Drop Probability: 0.1
+
+Pretraining:
+  Duration: 0.0 minutes
+  AUC Score: 0.7226
+
+Robustness Evaluation:
+  Baseline Loss (no drop): 1.7465
+  Drop 0.1: Loss=1.6081, Δ=-0.1384
+  Drop 0.2: Loss=1.7974, Δ=+0.0509
+  Drop 0.3: Loss=1.6400, Δ=-0.1065
+
+PPO Warmup (2 epochs):
+  Final Reward (Epoch 2): -0.013
+  Final Policy Loss: 0.2924
+  Final Early Stop Rate: 1.000
+  Final Avg Size: 8.7
+
+Total Test Duration: 1.4 minutes
+============================================================
+
+Summary saved to: results/pretraining_tests/syn1_drop10_seed0_20251116_060234.json
+
+✓ Test completed successfully!
+End Time: 2025-11-16 06:02:34
+============================================================
