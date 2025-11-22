@@ -850,11 +850,11 @@ class Runner:
 
         # Size loss
         if args.size_reg > 0:
-            v += args.size_reg * torch.FloatTensor([g.size()[1] for g in batch_g])
+            v += args.size_reg * torch.FloatTensor([g.size()[1] for g in batch_g]).to(v.device)
         
         # Raidus penalty
         if args.radius_penalty > 0:
-            v += args.radius_penalty * torch.FloatTensor([self.graphs.subgraph_depth(x) for x in cs])
+            v += args.radius_penalty * torch.FloatTensor([self.graphs.subgraph_depth(x) for x in cs]).to(v.device)
 
         # Similarity loss
         if args.sim_reg > 0:
