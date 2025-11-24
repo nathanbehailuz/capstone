@@ -11,7 +11,7 @@
 #SBATCH -c 32                     # more CPU to feed the GPU
 #SBATCH --mem=24G
 #SBATCH -t 12:00:00
-#SBATCH --array=0
+#SBATCH --array=4
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================

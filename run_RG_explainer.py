@@ -763,15 +763,15 @@ class Runner:
         modified_lines = []
         edge_scores_idx = 0
         
-        print(f"Looking for epoch pattern: {epoch_pattern}")
-        print(f"Number of edge scores to save: {len(edge_scores_list)}")
+        # print(f"Looking for epoch pattern: {epoch_pattern}")
+        # print(f"Number of edge scores to save: {len(edge_scores_list)}")
         
         for i, line in enumerate(lines):
             modified_lines.append(line)
             
             # Check if this is an epoch marker
             if re.search(epoch_pattern, line):
-                print(f"Found epoch marker at line {i}: {line.strip()}")
+                # print(f"Found epoch marker at line {i}: {line.strip()}")
                 # Look ahead for the next lines that contain subgraph data
                 j = i + 1
                 while j < len(lines) and not re.search(r'\[EVAL-', lines[j]):
@@ -780,7 +780,7 @@ class Runner:
                     # Check if this line contains subgraph data (sgs [...])
                     # Handle different dataset formats: g_id/n_id ... sgs [...] or n_id ... sgs [...]
                     if 'sgs' in current_line and '[' in current_line and ']' in current_line:
-                        print(f"Found subgraph line at {j}: {current_line.strip()}")
+                        # print(f"Found subgraph line at {j}: {current_line.strip()}")
                         if edge_scores_idx < len(edge_scores_list):
                             edge_scores = edge_scores_list[edge_scores_idx]
                             
@@ -794,24 +794,25 @@ class Runner:
                                 
                                 # Add edge scores line after the subgraph line
                                 modified_lines.append(f"  {edge_scores_str}\n")
-                                print(f"Added edge scores: {edge_scores_str}")
+                                # print(f"Added edge scores: {edge_scores_str}")
                                 edge_scores_idx += 1
                             else:
                                 modified_lines.append("  edge_scores {}\n")
-                                print(f"Added empty edge scores")
+                                # print(f"Added empty edge scores")
                                 edge_scores_idx += 1
                         else:
-                            print(f"Warning: No more edge scores available (idx={edge_scores_idx}, total={len(edge_scores_list)})")
+                            # print(f"Warning: No more edge scores available (idx={edge_scores_idx}, total={len(edge_scores_list)})")
+                            pass
                     
                     j += 1
         
-        print(f"Processed {edge_scores_idx} edge scores out of {len(edge_scores_list)}")
+        # print(f"Processed {edge_scores_idx} edge scores out of {len(edge_scores_list)}")
         
         # Write the modified content back to the file
         try:
             with open(results_file, 'w') as f:
                 f.writelines(modified_lines)
-            print(f"Edge scores saved to {results_file}")
+            # print(f"Edge scores saved to {results_file}")
         except Exception as e:
             print(f"Error saving edge scores: {e}")
 
@@ -820,11 +821,22 @@ class Runner:
             # check whether nodes belong to one graph
             flag_check = True
             for i in range(len(nodes)-1):
+                # Bounds check
+                if nodes[i] >= len(self.n_to_g_index) or nodes[i+1] >= len(self.n_to_g_index):
+                    print(f"[WARNING] Node index out of bounds in get_g_id: nodes[i]={nodes[i]}, nodes[i+1]={nodes[i+1]}, max_idx={len(self.n_to_g_index)-1}")
+                    flag_check = False
+                    break
+                
                 if self.n_to_g_index[nodes[i]] != self.n_to_g_index[nodes[i+1]]:
                     flag_check = False
                     break
             if flag_check == False:
                 print("Nodes do not belong to one graph!")
+
+        # Bounds check for return value
+        if nodes[0] >= len(self.n_to_g_index):
+             print(f"[WARNING] Node index out of bounds in get_g_id return: nodes[0]={nodes[0]}, max_idx={len(self.n_to_g_index)-1}")
+             return 0 # Fallback to 0 or handle appropriately
 
         return self.n_to_g_index[nodes[0]]
     
