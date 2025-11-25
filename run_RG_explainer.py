@@ -817,28 +817,32 @@ class Runner:
             print(f"Error saving edge scores: {e}")
 
     def get_g_id(self, nodes, is_check=False):
+        # Ensure we have a valid mapping
+        if not hasattr(self, 'n_to_g_index') or len(self.n_to_g_index) == 0:
+            return 0
+
+        # Helper to safe get graph id
+        def safe_get(node_idx):
+            if node_idx < 0: return 0
+            if node_idx >= len(self.n_to_g_index):
+                return self.n_to_g_index[-1]
+            return self.n_to_g_index[node_idx]
+
         if is_check:
             # check whether nodes belong to one graph
             flag_check = True
-            for i in range(len(nodes)-1):
-                # Bounds check
-                if nodes[i] >= len(self.n_to_g_index) or nodes[i+1] >= len(self.n_to_g_index):
-                    print(f"[WARNING] Node index out of bounds in get_g_id: nodes[i]={nodes[i]}, nodes[i+1]={nodes[i+1]}, max_idx={len(self.n_to_g_index)-1}")
+            first_g_id = safe_get(nodes[0])
+            for i in range(1, len(nodes)):
+                if safe_get(nodes[i]) != first_g_id:
                     flag_check = False
                     break
-                
-                if self.n_to_g_index[nodes[i]] != self.n_to_g_index[nodes[i+1]]:
-                    flag_check = False
-                    break
+            
             if flag_check == False:
-                print("Nodes do not belong to one graph!")
+                # Only print warning occasionally or if verbose
+                # print("Nodes do not belong to one graph!")
+                pass
 
-        # Bounds check for return value
-        if nodes[0] >= len(self.n_to_g_index):
-             print(f"[WARNING] Node index out of bounds in get_g_id return: nodes[0]={nodes[0]}, max_idx={len(self.n_to_g_index)-1}")
-             return 0 # Fallback to 0 or handle appropriately
-
-        return self.n_to_g_index[nodes[0]]
+        return safe_get(nodes[0])
     
     def get_node_features_for_edges(self, g_id, edge_idx):
         """

@@ -74,5 +74,5 @@ def check_motif_in_sgs(dataset_name, seed, graph_ids):
 
 if __name__ == '__main__':
     # Check graphs mentioned by user
-    check_motif_in_sgs('ba2', 4, [0, 595])
+    check_motif_in_sgs('syn1', 4, [0, 595])
 
