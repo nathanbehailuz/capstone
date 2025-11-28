@@ -20,6 +20,8 @@ class Locator:
         self.old_logps = None
 
         feat_dim = g_embeds.size()[1] + n_embeds.size()[-1]
+        print(f"[Locator DEBUG] g_embeds shape: {g_embeds.shape}, n_embeds shape: {n_embeds.shape}, feat_dim: {feat_dim}")
+        
         self.model = nn.Sequential(
             nn.Linear(feat_dim, 64),
             nn.ReLU(),
@@ -64,6 +66,23 @@ class Locator:
             self.sg_node_to_embed_idx.append(node_mapping)
         
         self.logit_embeds = torch.cat(self.logit_embeds).to(self.device).detach() if self.logit_embeds else torch.empty(0, feat_dim).to(self.device)
+        
+        # Dynamically update model input size if necessary
+        expected_dim = g_embeds.size()[1] + n_embeds.size()[-1]
+        
+        # Check actual logit_embeds dimension
+        if self.logit_embeds.size(0) > 0:
+            actual_dim = self.logit_embeds.size(1)
+            print(f"[Locator DEBUG] logit_embeds dim: {actual_dim}")
+            if actual_dim != self.model[0].in_features:
+                print(f"[Locator] Updating model input dim from {self.model[0].in_features} to {actual_dim}")
+                self.model[0] = nn.Linear(actual_dim, 64).to(self.device)
+                self.optimizer = optim.Adam(self.model.parameters(), lr=d_lr)
+        else:
+             if expected_dim != self.model[0].in_features:
+                print(f"[Locator] Updating model input dim from {self.model[0].in_features} to {expected_dim}")
+                self.model[0] = nn.Linear(expected_dim, 64).to(self.device)
+                self.optimizer = optim.Adam(self.model.parameters(), lr=d_lr)
         
 
 
@@ -112,12 +131,33 @@ class Locator:
             loss = 0
             r_i = 0
             for j in range(len(self.sgs)):
+                # Calculate non-isolated count for correct offset management
+                non_isolated_count = sum(1 for n in self.sgs[j] if n not in self.isolated_nodes)
+                
                 if selected_sg[j]:
-                    softmax_logits = nn.Softmax(dim=0)(logits[offset:offset+len(self.sgs[j])])
-                    loss += self.pretrain_loss_func(softmax_logits, all_rewards[r_i])
+                    if non_isolated_count > 0:
+                        # Get logits for non-isolated nodes
+                        sg_logits = logits[offset:offset+non_isolated_count]
+                        
+                        # Create full logits matching all_rewards size (including isolated nodes)
+                        full_logits = torch.full((len(self.sgs[j]),), -10.0, device=self.device)
+                        non_iso_idx = 0
+                        for node_idx, node in enumerate(self.sgs[j]):
+                            if node not in self.isolated_nodes:
+                                full_logits[node_idx] = sg_logits[non_iso_idx]
+                                non_iso_idx += 1
+                        
+                        # Softmax over full set of nodes
+                        softmax_logits = nn.Softmax(dim=0)(full_logits)
+                        loss += self.pretrain_loss_func(softmax_logits, all_rewards[r_i])
+                    else:
+                        # All nodes isolated? Skip loss calculation but increment r_i
+                        # (all_rewards[r_i] exists but corresponds to dummy selection)
+                        pass
+                        
                     r_i += 1
 
-                offset += len(self.sgs[j])
+                offset += non_isolated_count
             
             self.optimizer.zero_grad()
             loss.backward()

@@ -2,7 +2,7 @@
 # File: syn1_ppo.slurm
  
 ## ===================== SLURM =====================
-#SBATCH -J rgx_syn1_ppo
+#SBATCH -J syn1_pc
 #SBATCH -p nvidia
 #SBATCH --gres=gpu:1
 #SBATCH -N 1
@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=1-9
+#SBATCH --array=0
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -83,6 +83,7 @@ N_EPOCHS=20
 PPO_EPOCHS=4              
 N_ROLLOUTS=32             
 USE_CAUSAL=True
+RANDOM_EDGE_DROP=0.0
 
 # Regularization - BALANCED for proper size control
 SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)
@@ -152,11 +153,19 @@ KL_ADAPT_HIGH_THRESHOLD=2.0
 KL_ADAPT_LOW_THRESHOLD=0.5
 ENTROPY_DECAY_FRACTION=0.7
 
-# Set result file name based on causal flag
-if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
-    RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
+# Set result file name based on causal and edge drop flags
+if (( $(echo "${RANDOM_EDGE_DROP} > 0.0" | bc -l) )); then
+    if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
+        RESULT_FILE="results/${DATASET}_ppo_causal_edge_seed_${SEED}.txt"
+    else
+        RESULT_FILE="results/${DATASET}_ppo_edge_seed_${SEED}.txt"
+    fi
 else
-    RESULT_FILE="results/${DATASET}_ppo_seed_${SEED}.txt"
+    if [ "${USE_CAUSAL}" = "True" ] || [ "${USE_CAUSAL}" = "true" ]; then
+        RESULT_FILE="results/${DATASET}_ppo_causal_seed_${SEED}.txt"
+    else
+        RESULT_FILE="results/${DATASET}_ppo_seed_${SEED}.txt"
+    fi
 fi
 
 # Clean the result file before starting
@@ -234,6 +243,7 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --entropy_coeff_start "${ENTROPY_COEFF_START}" \
     --entropy_coeff_end "${ENTROPY_COEFF_END}" \
     --ppo_debug \
+    --random_edge_drop "${RANDOM_EDGE_DROP}" \
     --value_loss_coef "${VALUE_LOSS_COEF}" \
     --value_loss_scale "${VALUE_LOSS_SCALE}" \
     --confidence_threshold "${CONFIDENCE_THRESHOLD}" \

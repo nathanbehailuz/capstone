@@ -83,7 +83,7 @@ class GraphGCN(torch.nn.Module):
 
     def forward(self, x, edge_index, batch=None, edge_weights=None, global_agg_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.int64)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         embed = self.embedding(x, edge_index, edge_weights)
 
         if global_agg_weights is not None:
@@ -99,7 +99,7 @@ class GraphGCN(torch.nn.Module):
 
     def embedding(self, x, edge_index, edge_weights=None):
         if edge_weights is None:
-            edge_weights = torch.ones(edge_index.size(1))
+            edge_weights = torch.ones(edge_index.size(1), device=edge_index.device)
 
         out1 = self.conv1(x, edge_index, edge_weights)
         out1 = torch.nn.functional.normalize(out1, p=2, dim=1)  # this is not used in PGExplainer
@@ -119,7 +119,7 @@ class GraphGCN(torch.nn.Module):
 
     def graph_embedding(self, x, edge_index, batch=None, edge_weights=None, global_agg_weights=None):
         if batch is None: # No batch given
-            batch = torch.zeros(x.size(0), dtype=torch.int64)
+            batch = torch.zeros(x.size(0), dtype=torch.int64, device=x.device)
         embed = self.embedding(x, edge_index, edge_weights)
 
         if global_agg_weights is not None:

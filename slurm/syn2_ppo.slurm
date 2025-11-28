@@ -11,7 +11,7 @@
 #SBATCH -c 32                     # more CPU to feed the GPU
 #SBATCH --mem=24G
 #SBATCH -t 12:00:00
-#SBATCH --array=0
+#SBATCH --array=5-9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -72,6 +72,7 @@ N_EPOCHS=50
 PPO_EPOCHS=10
 N_ROLLOUTS=10
 USE_CAUSAL=False
+N_HOP=4
 
 # Regularization - BALANCED for proper size control
 SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)
@@ -173,6 +174,7 @@ echo "[$(date)] Starting seed=$SEED" | tee -a "$RESULT_FILE"
   --lambda_radius "${LAMBDA_RADIUS}" \
   --step_cost "${STEP_COST}" \
   --use_causal "${USE_CAUSAL}" \
+  --n_hop "${N_HOP}" \
   --clip_range_policy 0.2 \
   --clip_range_value 0.3 \
   --kl_target 0.025 \

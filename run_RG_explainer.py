@@ -7,9 +7,12 @@ import time
 import sys
 import os
 import re
+import random
 
+import numpy as np
 import torch
 from torch import optim
+import networkx as nx
 
 from components import *
 from utils import *
@@ -21,7 +24,7 @@ import torch_geometric as ptgeom
 from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer
 
 
-def drop_edges(edge_index, drop_prob, device=None):
+def drop_edges(edge_index, drop_prob, device=None, preserve_connectivity=True):
     """
     Randomly drops edges from the graph with probability `drop_prob`.
     
@@ -29,6 +32,7 @@ def drop_edges(edge_index, drop_prob, device=None):
         edge_index: torch.Tensor of shape [2, num_edges]
         drop_prob: float in (0, 1), probability of dropping each edge
         device: torch device
+        preserve_connectivity: if True, only drop edges that don't disconnect the graph
     
     Returns:
         torch.Tensor: edge_index with randomly dropped edges
@@ -36,8 +40,52 @@ def drop_edges(edge_index, drop_prob, device=None):
     if drop_prob <= 0.0:
         return edge_index
     
-    # Bernoulli sampling to keep edges
-    mask = (torch.rand(edge_index.size(1)) > drop_prob)
+    if not preserve_connectivity:
+        # Simple random dropping (original behavior)
+        mask = (torch.rand(edge_index.size(1)) > drop_prob)
+        if device is not None:
+            mask = mask.to(device)
+        return edge_index[:, mask]
+    
+    # Connectivity-preserving edge dropping
+    # Strategy: Build a spanning tree first, then randomly drop from remaining edges
+    
+    # Convert to numpy for networkx
+    edges_np = edge_index.cpu().numpy().T
+    
+    # Build undirected graph (remove duplicate edges for undirected)
+    G = nx.Graph()
+    G.add_edges_from(edges_np)
+    
+    # Get a spanning tree to maintain connectivity
+    if nx.is_connected(G):
+        spanning_tree = nx.minimum_spanning_tree(G)
+        protected_edges = set(spanning_tree.edges())
+        # Add reverse edges for undirected graph (make a copy first to avoid iteration error)
+        protected_edges.update((v, u) for u, v in list(protected_edges))
+    else:
+        # Graph already disconnected, use connected components
+        protected_edges = set()
+        for component in nx.connected_components(G):
+            if len(component) > 1:
+                subgraph = G.subgraph(component)
+                spanning_tree = nx.minimum_spanning_tree(subgraph)
+                tree_edges = list(spanning_tree.edges())
+                # Add both directions for undirected graph
+                protected_edges.update(tree_edges)
+                protected_edges.update((v, u) for u, v in tree_edges)
+    
+    # Build mask: keep protected edges, randomly drop others
+    mask = torch.ones(edge_index.size(1), dtype=torch.bool)
+    for i in range(edge_index.size(1)):
+        u, v = edge_index[0, i].item(), edge_index[1, i].item()
+        edge = (u, v)
+        
+        if edge not in protected_edges:
+            # This edge is not critical for connectivity, can drop it
+            if torch.rand(1).item() < drop_prob:
+                mask[i] = False
+    
     if device is not None:
         mask = mask.to(device)
     
@@ -95,33 +143,40 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
         train_comms = train_comms[shuffle_index]
         eval_seeds = eval_seeds[shuffle_index]
 
-        # Apply random edge dropping for robustness (XG-Explainer strategy)
-        original_graph = None
-        if args is not None and args.random_edge_drop > 0:
-            # Save original graph
-            original_graph = g.graph
-            original_edge_index = original_graph.edge_index
-            
-            # Apply edge dropping
-            dropped_edge_index = drop_edges(original_edge_index, args.random_edge_drop, device=original_edge_index.device)
-            
-            # Log on first iteration
-            if i == 0:
-                original_edges = original_edge_index.size(1)
-                remaining_edges = dropped_edge_index.size(1)
-                drop_rate = (original_edges - remaining_edges) / original_edges if original_edges > 0 else 0
-                print(f'[Pretrain Edge Drop] Probability: {args.random_edge_drop:.3f}', flush=True)
-                print(f'[Pretrain Edge Drop] Edges: {original_edges} -> {remaining_edges} (retained: {100*(1-drop_rate):.1f}%)', flush=True)
-            
-            # Create temporary graph with dropped edges
-            # Convert edge_index to numpy for Graph constructor
-            dropped_edges_np = dropped_edge_index.cpu().numpy()
-            temp_graph = Graph(dropped_edges_np)
-            # Preserve the device for edge_index
-            temp_graph.edge_index = dropped_edge_index
-            
-            # Replace graph for this iteration
-            g.graph = temp_graph
+        # NOTE: Edge dropout is DISABLED during pretraining
+        # Pretraining uses supervised targets (MLE), not RL exploration
+        # Edge dropout is ONLY applied during main PPO training (see sample_episodes)
+        # 
+        # COMMENTED OUT: Apply random edge dropping for robustness (XG-Explainer strategy)
+        # original_graph = None
+        # if args is not None and args.random_edge_drop > 0:
+        #     # Save original graph
+        #     original_graph = g.graph
+        #     original_edge_index = original_graph.edge_index
+        #     
+        #     # Apply edge dropping (connectivity-preserving)
+        #     dropped_edge_index = drop_edges(original_edge_index, args.random_edge_drop, 
+        #                                     device=original_edge_index.device, 
+        #                                     preserve_connectivity=True)
+        #     
+        #     # Log on first iteration
+        #     if i == 0:
+        #         original_edges = original_edge_index.size(1)
+        #         remaining_edges = dropped_edge_index.size(1)
+        #         drop_rate = (original_edges - remaining_edges) / original_edges if original_edges > 0 else 0
+        #         print(f'[Pretrain Edge Drop] Strategy: Connectivity-Preserving', flush=True)
+        #         print(f'[Pretrain Edge Drop] Probability: {args.random_edge_drop:.3f}', flush=True)
+        #         print(f'[Pretrain Edge Drop] Edges: {original_edges} -> {remaining_edges} (retained: {100*(1-drop_rate):.1f}%)', flush=True)
+        #     
+        #     # Create temporary graph with dropped edges
+        #     # Convert edge_index to numpy for Graph constructor
+        #     dropped_edges_np = dropped_edge_index.cpu().numpy()
+        #     temp_graph = Graph(dropped_edges_np)
+        #     # Preserve the device for edge_index
+        #     temp_graph.edge_index = dropped_edge_index
+        #     
+        #     # Replace graph for this iteration
+        #     g.graph = temp_graph
 
         batch_loss = 0.
         batch_count = 0
@@ -147,9 +202,9 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
             batch_count += 1
             total_samples += len(batch)
         
-        # Restore original graph after batch processing
-        if original_graph is not None:
-            g.graph = original_graph
+        # COMMENTED OUT: Restore original graph after batch processing
+        # if original_graph is not None:
+        #     g.graph = original_graph
         
         if batch_count > 0:
             avg_loss = batch_loss / batch_count
@@ -342,7 +397,7 @@ class Runner:
                 
                 # Use pre-allocated edge weights
                 edge_weights = edge_weights_template[:edge_idx.size(1)]
-                pred = self.trained_model(node_feats_subset, edge_idx, edge_weights)[0]
+                pred = self.trained_model(node_feats_subset, edge_idx, batch=None, edge_weights=edge_weights)[0]
                 whole_graph_original_preds.append(pred)
             whole_graph_original_preds = torch.stack(whole_graph_original_preds)
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
@@ -355,7 +410,7 @@ class Runner:
                 
                 node_feats_subset = self.get_node_features_for_edges(i, edge_idx)
                 edge_weights = edge_weights_template[:edge_idx.size(1)]
-                g_embed = self.trained_model.graph_embedding(node_feats_subset, edge_idx, edge_weights)[0]
+                g_embed = self.trained_model.graph_embedding(node_feats_subset, edge_idx, batch=None, edge_weights=edge_weights)[0]
                 g_embeds.append(g_embed)
             g_embeds = torch.stack(g_embeds)
 
@@ -560,7 +615,16 @@ class Runner:
         # Get target classes for eval seeds (always needed for delta rewards)
         with torch.no_grad():
             edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
-            all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
+            
+            # Create batch tensor for graph tasks to ensure global_max_pool works
+            batch = None
+            if self.task == "graph_task" and hasattr(self, 'n_to_g_index'):
+                batch = torch.tensor(self.n_to_g_index, dtype=torch.int64, device=self.graphs.edge_index.device)
+            
+            if self.task == "graph_task":
+                all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, batch=batch, edge_weights=edge_weights)
+            else:
+                all_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights=edge_weights)
             target_classes = torch.argmax(all_preds, dim=1)[list(self.eval_seeds)]
         
         # FIX: Set up GNN model and data for delta rewards (with or without causal)
@@ -945,7 +1009,7 @@ class Runner:
         arg_dict = vars(args)
         pretrain_related_args = ['pretrain_list', 'pretrain_set', 'pretrain_l_iter', 'pretrain_l_sample_rate', 
                                 'hidden_size', 'dataset', 'seed', 'max_size', 'n_hop', 
-                                'l_lr', 'g_lr',  'pretrain_g_batch_size', 'with_attr', 'ds_name']
+                                'l_lr', 'g_lr',  'pretrain_g_batch_size', 'with_attr', 'ds_name', 'random_edge_drop']
         # Add PPO hyperparameters to hash calculation using actual arguments
         ppo_hyperparams = {
             # Core PPO parameters
@@ -1170,6 +1234,13 @@ class Runner:
             print('=' * 20, flush=True)
             print(f'[Epoch {i_epoch + 1:4d}]', flush=True)
             tic = time.time()
+            
+            # Log edge dropout configuration (once at start)
+            if i_epoch == 0 and self.args.random_edge_drop > 0:
+                print(f'[EdgeDrop] Enabled: p={self.args.random_edge_drop:.3f}, '
+                      f'preserve_connectivity={self.args.preserve_connectivity}', flush=True)
+                print(f'[EdgeDrop] Applied per-episode during training rollouts only', flush=True)
+                print(f'[EdgeDrop] Rewards computed on original graph (no dropout)', flush=True)
             
             # Compute λ schedules for this epoch
             lam_size, lam_radius, lam_sim, entropy_c = get_lambda_schedule(i_epoch, self.args)
@@ -1411,8 +1482,11 @@ if __name__ == '__main__':
     parser.add_argument("--kl_adapt_low_threshold", type=float, default=0.5, help="Threshold multiplier for low KL")
     parser.add_argument("--entropy_decay_fraction", type=float, default=0.7, help="Fraction of epochs for entropy decay (0.7 = 70%)")
     
-    # Edge dropping for pretraining robustness
-    parser.add_argument("--random_edge_drop", type=float, default=0.0, help="Probability of randomly dropping edges during pretraining (0.0 to 1.0)")
+    # Edge dropping for training robustness (structural data augmentation)
+    parser.add_argument("--random_edge_drop", type=float, default=0.0, 
+                       help="Probability of randomly dropping edges during training rollouts (0.0 to 1.0)")
+    parser.add_argument("--preserve_connectivity", action='store_true', default=False,
+                       help="Preserve graph connectivity when dropping edges (slower but safer, default=False)")
 
     args = parser.parse_args()
     

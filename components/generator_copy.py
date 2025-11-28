@@ -30,9 +30,43 @@ class TrainingStats:
 
 class ExpansionEnv:
 
-    def __init__(self, graph: Graph, selected_nodes: List[List[int]], max_size: int, debug_mode: bool = False):
+    def __init__(self, graph: Graph, selected_nodes: List[List[int]], max_size: int, debug_mode: bool = False,
+                 training: bool = False, edge_dropout_prob: float = 0.0, preserve_connectivity: bool = False):
+        """
+        Graph expansion environment for RL.
+        
+        Args:
+            graph: Graph object (original graph)
+            selected_nodes: List of initial node selections per episode
+            max_size: Maximum trajectory length
+            debug_mode: Enable debug logging
+            training: If True, apply edge dropout. If False, use original graph.
+            edge_dropout_prob: Probability of dropping edges (only if training=True)
+            preserve_connectivity: Whether to preserve connectivity during dropout
+        
+        Note:
+            Edge dropout lives in the Environment (world dynamics), not the Generator (policy).
+            When training=True, each episode sees a stochastically dropped version of the graph.
+            Rewards are always computed using the original graph (not the dropped graph).
+        """
         self.max_size = max_size
-        self.graph = graph
+        
+        # Apply edge dropout if training mode
+        if training and edge_dropout_prob > 0.0:
+            self.graph = Graph.from_dropped_edges(
+                graph, edge_dropout_prob, preserve_connectivity
+            )
+            self.original_graph = graph  # Keep original for debugging/verification
+            
+            if debug_mode:
+                orig_edges = graph.edge_index.size(1)
+                drop_edges = self.graph.edge_index.size(1)
+                print(f"[ExpansionEnv] Edge dropout applied: {orig_edges} → {drop_edges} edges "
+                      f"({100.0 * (orig_edges - drop_edges) / orig_edges:.1f}% dropped)")
+        else:
+            self.graph = graph
+            self.original_graph = graph
+        
         self.n_nodes = self.graph.n_nodes
         self.data = selected_nodes
         self.bs = len(self.data)
@@ -272,6 +306,12 @@ class Generator:
         
         # Debug mode
         self.debug_mode = debug_mode
+        
+        # Edge dropout configuration (from args)
+        # IMPORTANT: Generator does NOT apply dropout, only passes config to Environment
+        # Edge dropout lives in Environment (world dynamics), not Generator (policy)
+        self.edge_dropout_prob = getattr(args, 'random_edge_drop', 0.0) if args else 0.0
+        self.preserve_connectivity = getattr(args, 'preserve_connectivity', False) if args else False
         
         # Store args for reward normalization
         self.args = args
@@ -569,17 +609,68 @@ class Generator:
         return shaped_rewards
 
     def generate(self, seeds: List[int], max_size: Optional[int] = None):
+        """
+        Generate explanations (inference mode, no dropout).
+        
+        Args:
+            seeds: List of seed nodes
+            max_size: Maximum trajectory length (default: self.max_size)
+        
+        Returns:
+            List of generated trajectories
+        
+        Note:
+            Inference always uses the original graph with NO edge dropout.
+            This ensures explanations are generated on the true world dynamics.
+        """
         max_size = self.max_size if max_size is None else max_size
-        env = ExpansionEnv(self.graph, [[s] for s in seeds], max_size, self.debug_mode)
+        
+        # Inference: always use original graph (training=False, no dropout)
+        env = ExpansionEnv(
+            self.graph,
+            [[s] for s in seeds],
+            max_size,
+            self.debug_mode,
+            training=False,  # No dropout during inference
+            edge_dropout_prob=0.0,
+            preserve_connectivity=False
+        )
+        
         self.model.eval()
         with torch.no_grad():
             episodes, *_ = self._sample_trajectories(env)
         return episodes
 
 
-    def sample_episodes(self, seeds: List[int], max_size: Optional[int] = None):
+    def sample_episodes(self, seeds: List[int], max_size: Optional[int] = None, training: bool = True):
+        """
+        Sample episodes for training or inference.
+        
+        Args:
+            seeds: List of seed nodes
+            max_size: Maximum trajectory length (default: self.max_size)
+            training: If True, apply edge dropout. If False, use original graph.
+        
+        Returns:
+            Sampled trajectories and associated data
+        
+        Note:
+            When training=True, Environment handles edge dropout (world dynamics).
+            Generator only passes configuration, never applies dropout itself.
+        """
         max_size = self.max_size if max_size is None else max_size
-        env = ExpansionEnv(self.graph, [[s] for s in seeds], max_size, self.debug_mode)
+        
+        # Create environment with explicit training flag
+        # Environment handles edge dropout, NOT Generator
+        env = ExpansionEnv(
+            self.graph,
+            [[s] for s in seeds],
+            max_size,
+            self.debug_mode,
+            training=training,  # Explicit: Environment decides dropout
+            edge_dropout_prob=self.edge_dropout_prob,
+            preserve_connectivity=self.preserve_connectivity
+        )
         return self._sample_trajectories(env)
 
     def sample_rollouts(self, prefix: List[List[int]], max_size: Optional[int] = None):
@@ -700,6 +791,32 @@ class Generator:
         return rewards
 
     def _compute_delta_rewards_real_gnn(self, selected_nodes, lam_size, lam_radius, lam_sim):
+        """
+        Compute per-step incremental rewards using ORIGINAL graph predictor.
+        
+        CRITICAL: Rewards must ALWAYS use full_edge_index (original graph),
+                  never the dropped graph from training environment.
+        
+        Args:
+            selected_nodes: List of trajectories
+            lam_size: Size penalty weight
+            lam_radius: Radius penalty weight
+            lam_sim: Similarity penalty weight
+        
+        Returns:
+            numpy array of rewards
+        """
+        # BRUTAL ASSERTION: Ensure we're using original graph for rewards
+        assert hasattr(self, 'full_edge_index'), \
+            "full_edge_index not set - cannot compute rewards on original graph"
+        assert self.full_edge_index is not None, \
+            "full_edge_index is None - rewards need original graph, not dropped graph"
+        
+        # Log on first call to verify original graph usage
+        if not hasattr(self, '_reward_graph_logged'):
+            print(f"[Reward] Using original graph: {self.full_edge_index.size(1)} edges", flush=True)
+            print(f"[Reward] Predictor GNN always sees full graph, never dropped edges", flush=True)
+            self._reward_graph_logged = True
         """
         Compute incremental (delta) rewards per step using real GNN calls.
         
@@ -2348,11 +2465,18 @@ class Generator:
             ps = ps / ps.sum(dim=-1, keepdim=True)
             
             # Check for invalid probabilities
-            if not torch.isfinite(ps).all():
+            if not torch.isfinite(ps).all() or (ps < 0).any():
                 epoch_num = getattr(self, 'current_epoch', -1)
-                print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
+                # print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
                 ps = torch.nan_to_num(ps, nan=0.0, posinf=0.0, neginf=0.0)
-                ps = ps / ps.sum(dim=-1, keepdim=True)
+                ps = torch.clamp(ps, min=0.0) # Ensure non-negative
+                
+                ps_sum = ps.sum(dim=-1, keepdim=True)
+                if ps_sum.item() <= 0:
+                    # Fallback to uniform distribution if sum is zero
+                    ps = torch.ones_like(ps) / ps.size(-1)
+                else:
+                    ps = ps / ps_sum
             
             entropy = -(ps * torch.log(ps + 1e-8)).sum(dim=-1)
             action = torch.multinomial(ps, 1).item()
@@ -2406,11 +2530,17 @@ class Generator:
             ps = ps / ps.sum()
             
             # Check for invalid probabilities
-            if not torch.isfinite(ps).all():
+            if not torch.isfinite(ps).all() or (ps < 0).any():
                 epoch_num = getattr(self, 'current_epoch', -1)
-                print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
+                # print(f"[WARN] Invalid probs at epoch {epoch_num} step {i}: logits range [{logits.min():.2f}, {logits.max():.2f}]", flush=True)
                 ps = torch.nan_to_num(ps, nan=0.0, posinf=0.0, neginf=0.0)
-                ps = ps / ps.sum()
+                ps = torch.clamp(ps, min=0.0)
+                
+                ps_sum = ps.sum()
+                if ps_sum.item() <= 0:
+                    ps = torch.ones_like(ps) / ps.size(0)
+                else:
+                    ps = ps / ps_sum
             
             entropy = -(ps * torch.log(ps + 1e-8)).sum()
             action = torch.multinomial(ps, 1).item()

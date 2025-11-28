@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=0-3
+#SBATCH --array=1-9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -79,7 +79,7 @@ export PYTHONNOUSERSITE=1
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn3"
 POLICY="PPO"
-N_EPOCHS=20
+N_EPOCHS=30
 PPO_EPOCHS=6
 N_ROLLOUTS=10
 USE_CAUSAL=False

@@ -13,6 +13,49 @@ class Graph:
         edges = edges.T
         self.neighbors, self.n_nodes, self.adj_mat, self.isolated_nodes = self._init_from_edges(edges)
 
+    @classmethod
+    def from_dropped_edges(cls, original_graph, drop_prob, preserve_connectivity=False):
+        """
+        Create a new Graph with edges randomly dropped.
+        
+        This factory method applies structural data augmentation by randomly dropping
+        edges during training. Edge dropout modifies world dynamics (action availability,
+        neighborhood expansion, subgraph construction) but does NOT affect reward computation.
+        
+        Args:
+            original_graph: Original Graph object
+            drop_prob: float in [0, 1], probability of dropping each edge
+            preserve_connectivity: bool, whether to preserve graph connectivity
+        
+        Returns:
+            Graph object with dropped edges (or original if drop_prob <= 0)
+        
+        Example:
+            >>> original = Graph(edges)
+            >>> dropped = Graph.from_dropped_edges(original, drop_prob=0.2)
+            >>> dropped.edge_index.size(1) <= original.edge_index.size(1)
+            True
+        """
+        from utils.edge_dropout import apply_edge_dropout
+        
+        if drop_prob <= 0.0:
+            return original_graph
+        
+        # Apply edge dropout
+        dropped_edge_index = apply_edge_dropout(
+            original_graph.edge_index,
+            drop_prob,
+            preserve_connectivity,
+            device=original_graph.edge_index.device
+        )
+        
+        # Handle edge case: if all edges were dropped, return original graph
+        if dropped_edge_index.size(1) == 0:
+            return original_graph
+        
+        # Create new Graph from dropped edges
+        return cls(dropped_edge_index.cpu().numpy())
+
     @staticmethod
     def _init_from_edges(edges: np.ndarray) -> (Dict[int, Set[int]], int, sp.spmatrix):
         neighbors = collections.defaultdict(set)
@@ -75,12 +118,18 @@ class Graph:
         walk = [seed]
         while len(remaining):
             candidates = tuple(boundary & remaining)
+            
+            # Handle disconnected graph (e.g., from edge dropping)
+            if not candidates:
+                # Graph is disconnected - return partial walk
+                break
+                
             new_node = random.choice(candidates)
             remaining.remove(new_node)
             boundary |= self.neighbors[new_node]
             walk.append(new_node)
         
-        length =  np.random.randint(4, len(walk)) 
+        length = np.random.randint(4, len(walk)) if len(walk) >= 4 else len(walk)
         return walk[:length]
     
     def sample_layerwise_expansion(self, comm_nodes: Union[List, Set],
@@ -92,6 +141,19 @@ class Graph:
         walk = [seed]
         while len(remaining):
             candidates = tuple(cur_boundary & remaining)
+            
+            # Handle disconnected graph (e.g., from edge dropping)
+            if not candidates:
+                # Try to expand to next boundary
+                if next_boundary is not None:
+                    cur_boundary = next_boundary & remaining
+                    next_boundary = None
+                    candidates = tuple(cur_boundary & remaining)
+                
+                # If still no candidates, graph is disconnected - return partial walk
+                if not candidates:
+                    break
+            
             new_node = random.choice(candidates)
             remaining.remove(new_node)
             cur_boundary.remove(new_node)
@@ -106,7 +168,7 @@ class Graph:
             
             walk.append(new_node)
         
-        length = np.random.randint(4, len(walk))
+        length = np.random.randint(4, len(walk)) if len(walk) >= 4 else len(walk)
 
         return walk[:length]
 
@@ -117,7 +179,13 @@ class Graph:
         walk = [seed]
         boundary = self.neighbors[seed].copy()
         for i in range(max_size - 1):
-            new_node = random.choice(tuple(boundary - set(walk)))
+            candidates = tuple(boundary - set(walk))
+            
+            # Handle disconnected graph or exhausted boundary
+            if not candidates:
+                break
+                
+            new_node = random.choice(candidates)
             boundary |= self.neighbors[new_node]
             walk.append(new_node)
         return walk

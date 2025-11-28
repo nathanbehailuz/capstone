@@ -10,7 +10,7 @@
 #SBATCH -c 32
 #SBATCH --mem=64G
 #SBATCH -t 7:00:00
-#SBATCH --array=0
+#SBATCH --array=4
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -70,7 +70,7 @@ MODEL="GNN"
 N_EPOCHS=10
 N_ROLLOUTS=5
 PRETRAIN_G_BATCH_SIZE=32
-G_BATCH_SIZE=128
+G_BATCH_SIZE=32
 N_G_UPDATES=1
 N_L_UPDATES=10
 EVAL_EVERY=1
@@ -88,7 +88,7 @@ ENTROPY_COEF=0.0
 
 # PPO Parameters
 PPO_EPOCHS=4
-MINIBATCH_SIZE=256
+MINIBATCH_SIZE=64
 CLIP_EPS=0.2
 GRAD_CLIP=1.0
 PPO_CLIP=0.1
