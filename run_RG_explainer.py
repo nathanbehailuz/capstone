@@ -143,37 +143,41 @@ def pretrain_g(g: Generator, train_comms, eval_seeds, max_size, bs, n, score_fn,
         train_comms = train_comms[shuffle_index]
         eval_seeds = eval_seeds[shuffle_index]
 
-        # NOTE: Edge dropout is DISABLED during pretraining
-        # Pretraining uses supervised targets (MLE), not RL exploration
-        # Edge dropout is ONLY applied during main PPO training (see sample_episodes)
-        # 
-        # COMMENTED OUT: Apply random edge dropping for robustness (XG-Explainer strategy)
-        # original_graph = None
+        # NOTE: Edge dropout is DISABLED during pretraining to ensure high-quality initialization
+        # Pretraining uses supervised targets (MLE), and dropping edges degrades the policy prior.
+        # Edge dropout is ONLY applied during main PPO training (via sample_episodes).
+        
+        # COMMENTED OUT: Apply random edge dropping for robustness
+        original_graph = None
         # if args is not None and args.random_edge_drop > 0:
         #     # Save original graph
         #     original_graph = g.graph
         #     original_edge_index = original_graph.edge_index
         #     
-        #     # Apply edge dropping (connectivity-preserving)
-        #     dropped_edge_index = drop_edges(original_edge_index, args.random_edge_drop, 
-        #                                     device=original_edge_index.device, 
-        #                                     preserve_connectivity=True)
+        #     # Apply edge dropping (connectivity-preserving by default for pretraining stability)
+        #     preserve_connectivity = getattr(args, 'preserve_connectivity', True)
         #     
         #     # Log on first iteration
         #     if i == 0:
         #         original_edges = original_edge_index.size(1)
-        #         remaining_edges = dropped_edge_index.size(1)
-        #         drop_rate = (original_edges - remaining_edges) / original_edges if original_edges > 0 else 0
-        #         print(f'[Pretrain Edge Drop] Strategy: Connectivity-Preserving', flush=True)
+        #         print(f'[Pretrain Edge Drop] Strategy: {"Connectivity-Preserving" if preserve_connectivity else "Simple Random"}', flush=True)
         #         print(f'[Pretrain Edge Drop] Probability: {args.random_edge_drop:.3f}', flush=True)
-        #         print(f'[Pretrain Edge Drop] Edges: {original_edges} -> {remaining_edges} (retained: {100*(1-drop_rate):.1f}%)', flush=True)
         #     
-        #     # Create temporary graph with dropped edges
-        #     # Convert edge_index to numpy for Graph constructor
-        #     dropped_edges_np = dropped_edge_index.cpu().numpy()
-        #     temp_graph = Graph(dropped_edges_np)
-        #     # Preserve the device for edge_index
-        #     temp_graph.edge_index = dropped_edge_index
+        #     # Create temporary graph with dropped edges using the factory method
+        #     from components.graph import Graph
+        #     temp_graph = Graph.from_dropped_edges(
+        #         original_graph, 
+        #         args.random_edge_drop, 
+        #         preserve_connectivity=preserve_connectivity
+        #     )
+        #     # Ensure device is preserved
+        #     temp_graph.edge_index = temp_graph.edge_index.to(original_edge_index.device)
+        #     
+        #     # Log edge counts on first iteration
+        #     if i == 0:
+        #         remaining_edges = temp_graph.edge_index.size(1)
+        #         drop_rate = (original_edges - remaining_edges) / original_edges if original_edges > 0 else 0
+        #         print(f'[Pretrain Edge Drop] Edges: {original_edges} -> {remaining_edges} (retained: {100*(1-drop_rate):.1f}%)', flush=True)
         #     
         #     # Replace graph for this iteration
         #     g.graph = temp_graph

@@ -10,7 +10,7 @@
 #SBATCH -c 4
 #SBATCH --mem=24G
 #SBATCH -t 7:00:00
-#SBATCH --array=1-9
+#SBATCH --array=9
 #SBATCH -o slurm_out/%x_%A_%a.out
 #SBATCH -e slurm_out/%x_%A_%a.err
 ## =================================================
@@ -76,11 +76,13 @@ export PYTHONNOUSERSITE=1
 # PY
 
 ## ==================== Params =====================
+# STABILITY TUNING: Adjusted hyperparameters to reduce AUC fluctuation
+# Changes: Lower LR, more PPO epochs, gradual schedules, reduced reward scale
 SEED="${SLURM_ARRAY_TASK_ID}"
 DATASET="syn1"
 POLICY="PPO"
-N_EPOCHS=20
-PPO_EPOCHS=4              
+N_EPOCHS=30
+PPO_EPOCHS=6              # Increased from 4 for more stable policy updates (reduces AUC fluctuation)              
 N_ROLLOUTS=32             
 USE_CAUSAL=True
 RANDOM_EDGE_DROP=0.1
@@ -91,8 +93,8 @@ SIZE_REG=0.01        # Increased 100x: was 0.0001 (too weak)
 SIM_REG=1.0          # Increased 10x: was 0.001 (need stronger similarity)
 RADIUS_PENALTY=0.1   # Increased 10x: was 0.01 (need radius control)
 
-# Learning rate - Higher for value function learning
-LR=0.0003            # Increased 3x: was 0.0001 default (value function needs faster learning)
+# Learning rate - Reduced for stability (fluctuating AUC)
+LR=0.00015           # Reduced from 0.0003 for more stable training (prevents overshooting)
 
 # Causal mechanism - FULL IMPLEMENTATION with CE-difference
 CAUSAL_WEIGHT=0.3   # Moderate weight with warmup (0.05-0.2 range)
@@ -118,11 +120,11 @@ DELTA_REWARD=1
 STOP_BONUS_OK=0.10        # Reduced from 0.5 to avoid over-rewarding
 STOP_PENALTY_BAD=0.30     # Increased from 0.2 to discourage bad STOPs
 TARGET_SIZE_K_NEW=8       # Dataset-specific target size
-REWARD_SCALE=5.0          # Global reward scaling factor to un-choke learning
+REWARD_SCALE=3.0          # Reduced from 5.0 for stability (prevents reward signal amplification)
 
-# λ Schedules - More aggressive warmup and scheduling
-WARMUP_EPOCHS=10          # Increased from 5 for better stability
-SCHEDULE_EPOCHS=20        # Increased from 10 for gradual ramp-up
+# λ Schedules - More gradual to prevent AUC fluctuations
+WARMUP_EPOCHS=12          # Increased from 10 for longer warmup (prevents early instability)
+SCHEDULE_EPOCHS=25        # Increased from 20 for more gradual ramp-up (reduces sudden changes)
 LAMBDA_SIZE_FINAL=0.02    # Increased from 0.01 for stronger size control
 LAMBDA_RADIUS_FINAL=0.10  # Same as before
 LAMBDA_SIM_FINAL=0.005    # Reduced from 0.01 to reduce similarity pressure
@@ -132,14 +134,14 @@ LAMBDA_SIM_START=0.0      # Same as before
 TRAJ_REWARD_NORM=1
 STD_ADVANTAGE=1
 
-# Entropy scheduling - More aggressive exploration
-ENTROPY_COEFF_START=0.003 # Increased from 1e-3 for better exploration
-ENTROPY_COEFF_END=0.0005  # Increased from 1e-4 for sustained exploration
+# Entropy scheduling - Balanced for stability
+ENTROPY_COEFF_START=0.002 # Reduced from 0.003 for more stable exploration
+ENTROPY_COEFF_END=0.0004  # Slightly reduced for gradual decay
 
 # Debug
 PPO_DEBUG=1
 
-VALUE_LOSS_COEF=0.3
+VALUE_LOSS_COEF=0.5       # Increased from 0.3 for better value function stability
 VALUE_LOSS_SCALE=0.5
 CONFIDENCE_THRESHOLD=0.5
 CONFIDENCE_TOLERANCE=0.05
@@ -218,11 +220,11 @@ srun --export=ALL --gres=gpu:1 -c "${SLURM_CPUS_PER_TASK:-4}" \
     --lambda_radius "${LAMBDA_RADIUS}" \
     --step_cost "${STEP_COST}" \
     --use_causal "${USE_CAUSAL}" \
-    --clip_range_policy 0.2 \
-    --clip_range_value 0.25 \
-    --kl_target 0.025 \
-    --entropy_decay_start 0.003 \
-    --entropy_decay_end 0.0005 \
+    --clip_range_policy 0.15 \
+    --clip_range_value 0.2 \
+    --kl_target 0.015 \
+    --entropy_decay_start "${ENTROPY_COEFF_START}" \
+    --entropy_decay_end "${ENTROPY_COEFF_END}" \
     --fidelity_thresh "${FIDELITY_THRESH}" \
     --max_size "${MAX_SIZE}" \
     --debug_mode "${DEBUG_MODE}" \
