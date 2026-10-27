@@ -448,7 +448,13 @@ class CausalRewardCalculator:
     This integrates the causal mechanism into the existing reward function.
     """
     
-    def __init__(self, gnn_model, causal_explainer, causal_weight: float = 0.5):
+    def __init__(
+        self,
+        gnn_model,
+        causal_explainer,
+        causal_weight: float = 0.5,
+        predictor=None,
+    ):
         """
         Args:
             gnn_model: The trained GNN model
@@ -458,6 +464,21 @@ class CausalRewardCalculator:
         self.gnn_model = gnn_model
         self.causal_explainer = causal_explainer
         self.causal_weight = causal_weight
+        self.predictor = predictor
+        self.diagnostics = {
+            "count": 0,
+            "failed": 0,
+            "saturated": 0,
+            "last_raw": 0.0,
+            "last_clipped": 0.0,
+            "weight": causal_weight,
+        }
+
+    def set_weight(self, causal_weight):
+        if not 0.0 <= causal_weight <= 1.0:
+            raise ValueError("causal weight must be in [0, 1]")
+        self.causal_weight = float(causal_weight)
+        self.diagnostics["weight"] = self.causal_weight
     
     def compute_causal_reward(self, graph, selected_nodes, target_y):
         """
@@ -471,7 +492,48 @@ class CausalRewardCalculator:
         Returns:
             causal_reward: Scalar reward based on marginal causal effect
         """
-        # Convert selected nodes to edge selection state (vectorized)
+        if self.predictor is not None:
+            seed = int(selected_nodes[0])
+            instance_id = (
+                int(self.predictor.batch[seed].item())
+                if self.predictor.task == "graph_task"
+                else seed
+            )
+            try:
+                selected = self.predictor.predict(
+                    selected_nodes,
+                    instance_id=instance_id,
+                    target_node=seed,
+                    target_class=target_y,
+                )
+                edgeless = self.predictor.predict(
+                    [seed],
+                    instance_id=instance_id,
+                    target_node=seed,
+                    target_class=target_y,
+                )
+                selected_logp = torch.log_softmax(selected.logits, -1)[target_y]
+                edgeless_logp = torch.log_softmax(edgeless.logits, -1)[target_y]
+                if not torch.isfinite(selected_logp) or not torch.isfinite(edgeless_logp):
+                    raise FloatingPointError("non-finite causal log probability")
+                raw = float((selected_logp - edgeless_logp).item())
+                raw += 0.5 if int(selected.logits.argmax()) == target_y else -0.5
+                clipped = max(-1.0, min(1.0, raw))
+                self.diagnostics.update(
+                    count=self.diagnostics["count"] + 1,
+                    saturated=self.diagnostics["saturated"] + int(clipped != raw),
+                    last_raw=raw,
+                    last_clipped=clipped,
+                )
+                return clipped
+            except Exception:
+                self.diagnostics["failed"] += 1
+                raise
+
+        raise RuntimeError(
+            "causal rewards require a PredictorAdapter; placeholder "
+            "neutral values are not allowed"
+        )
         edge_index = graph.edge_index
         device = edge_index.device
         
@@ -565,9 +627,9 @@ class CausalRewardCalculator:
                 
                 return causal_reward
                 
-            except Exception as e:
-                print(f"[CAUSAL REWARD] Error computing causal delta: {e}")
-                return 0.0
+            except Exception:
+                self.diagnostics["failed"] += 1
+                raise
     
     def compute_combined_reward(self, original_reward, causal_reward):
         """

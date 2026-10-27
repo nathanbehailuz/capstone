@@ -4,6 +4,14 @@ import pandas as pd
 import os
 
 
+def roc_auc_or_undefined(ground_truth, predictions):
+    labels = np.asarray(ground_truth)
+    scores = np.asarray(predictions)
+    if labels.size == 0 or np.unique(labels).size < 2:
+        return float("nan")
+    return roc_auc_score(labels, scores)
+
+
 def evaluation_auc(task, explanations, explanation_labels, indices, edge_score_agg='max', debug_eval_graph=-1):
     """Determines based on the task which auc evaluation method should be called to determine the AUC score
 
@@ -54,8 +62,7 @@ def evaluation_auc_graph(explanations, explanation_labels, indices, edge_score_a
             predictions.append(mask[t][0])
             ground_truth.append(edge_labels[edge_idx])
 
-    score = roc_auc_score(ground_truth, predictions)
-    return score
+    return roc_auc_or_undefined(ground_truth, predictions)
 
 
 def evaluation_auc_node(explanations, explanation_labels, edge_score_agg='max', debug_eval_graph=-1):
@@ -92,8 +99,7 @@ def evaluation_auc_node(explanations, explanation_labels, edge_score_agg='max', 
         ground_truth.extend(ground_truth_node)
         predictions.extend(prediction_node)
 
-    score = roc_auc_score(ground_truth, predictions)
-    return score
+    return roc_auc_or_undefined(ground_truth, predictions)
 
 
 def align_edge_scores_with_labels(subgraph_scores, full_graph_edge_index, label_edges, edge_score_agg='max'):
@@ -203,12 +209,11 @@ def debug_eval_one(graph_id, explanations, explanation_labels, task, edge_score_
         )
         
         # Compute AUC scores
-        if len(np.unique(aligned_labels)) > 1:  # Need both positive and negative samples
-            roc_auc = roc_auc_score(aligned_labels, aligned_scores)
+        roc_auc = roc_auc_or_undefined(aligned_labels, aligned_scores)
+        if np.unique(aligned_labels).size > 1:
             pr_auc = average_precision_score(aligned_labels, aligned_scores)
         else:
-            roc_auc = 0.5  # Default for uniform labels
-            pr_auc = 0.0
+            pr_auc = float("nan")
         
         print(f"  ROC-AUC: {roc_auc:.4f}")
         print(f"  PR-AUC: {pr_auc:.4f}")

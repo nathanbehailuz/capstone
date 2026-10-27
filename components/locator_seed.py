@@ -7,6 +7,15 @@ from torch import nn
 from torch.nn import functional as F
 from torch import optim
 
+
+def locator_kl(logits, target_probabilities):
+    return F.kl_div(
+        F.log_softmax(logits, dim=0),
+        target_probabilities,
+        reduction="sum",
+    )
+
+
 class Locator:
 
     def __init__(self, g_embeds, n_embeds, sgs, d_lr, isolated_nodes, device=None):
@@ -30,7 +39,7 @@ class Locator:
             nn.Linear(8, 1),
         ).to(self.device)
 
-        self.pretrain_loss_func = nn.KLDivLoss()
+        self.pretrain_loss_func = nn.KLDivLoss(reduction="sum")
 
         self.optimizer = optim.Adam(self.model.parameters(), lr= d_lr)
         self.sgs = sgs
@@ -39,19 +48,17 @@ class Locator:
         # Keep track of which nodes in each subgraph have embeddings
         self.logit_embeds = []
         self.sg_node_to_embed_idx = []  # Maps node position in sg to embedding index
-        offset = 0
-        
         for i, sg in enumerate(self.sgs):
-            # Count non-isolated nodes in this subgraph
-            non_isolated_count = sum(1 for node in sg if node not in self.isolated_nodes)
-            
-            if non_isolated_count > 0:
-                # Get embeddings only for non-isolated nodes
-                tn = n_embeds[offset:offset+non_isolated_count, :]
+            node_ids = [
+                int(node) for node in sg if node not in self.isolated_nodes
+            ]
+            if node_ids:
+                tn = n_embeds[
+                    torch.as_tensor(node_ids, dtype=torch.long, device=n_embeds.device)
+                ]
                 tg = g_embeds[i]
                 tg = tg.repeat(tn.size(0), 1)
                 self.logit_embeds.append(torch.cat((tg, tn), 1))
-                offset += non_isolated_count
             
             # Create mapping from node position to embedding index
             # Isolated nodes will have index -1 (no embedding)
@@ -147,9 +154,7 @@ class Locator:
                                 full_logits[node_idx] = sg_logits[non_iso_idx]
                                 non_iso_idx += 1
                         
-                        # Softmax over full set of nodes
-                        softmax_logits = nn.Softmax(dim=0)(full_logits)
-                        loss += self.pretrain_loss_func(softmax_logits, all_rewards[r_i])
+                        loss += locator_kl(full_logits, all_rewards[r_i])
                     else:
                         # All nodes isolated? Skip loss calculation but increment r_i
                         # (all_rewards[r_i] exists but corresponds to dummy selection)
@@ -159,6 +164,8 @@ class Locator:
 
                 offset += non_isolated_count
             
+            if r_i == 0:
+                continue
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()

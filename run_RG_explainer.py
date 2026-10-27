@@ -8,88 +8,45 @@ import sys
 import os
 import re
 import random
+import subprocess
+import uuid
 
 import numpy as np
 import torch
 from torch import optim
-import networkx as nx
 
 from components import *
-from utils import *
+from utils import apply_edge_dropout, seed_all
 
 from datasets import dataset_loaders, ground_truth_loaders
 from models import model_selector
 from evaluation.AUCEvaluation import AUCEvaluation
 import torch_geometric as ptgeom
 from components.causal_explainer import NodeLevelCausalExplainer, GraphLevelCausalExplainer
+from components.predictor import PredictorAdapter
 
 
 def drop_edges(edge_index, drop_prob, device=None, preserve_connectivity=True):
-    """
-    Randomly drops edges from the graph with probability `drop_prob`.
-    
-    Args:
-        edge_index: torch.Tensor of shape [2, num_edges]
-        drop_prob: float in (0, 1), probability of dropping each edge
-        device: torch device
-        preserve_connectivity: if True, only drop edges that don't disconnect the graph
-    
-    Returns:
-        torch.Tensor: edge_index with randomly dropped edges
-    """
-    if drop_prob <= 0.0:
-        return edge_index
-    
-    if not preserve_connectivity:
-        # Simple random dropping (original behavior)
-        mask = (torch.rand(edge_index.size(1)) > drop_prob)
-        if device is not None:
-            mask = mask.to(device)
-        return edge_index[:, mask]
-    
-    # Connectivity-preserving edge dropping
-    # Strategy: Build a spanning tree first, then randomly drop from remaining edges
-    
-    # Convert to numpy for networkx
-    edges_np = edge_index.cpu().numpy().T
-    
-    # Build undirected graph (remove duplicate edges for undirected)
-    G = nx.Graph()
-    G.add_edges_from(edges_np)
-    
-    # Get a spanning tree to maintain connectivity
-    if nx.is_connected(G):
-        spanning_tree = nx.minimum_spanning_tree(G)
-        protected_edges = set(spanning_tree.edges())
-        # Add reverse edges for undirected graph (make a copy first to avoid iteration error)
-        protected_edges.update((v, u) for u, v in list(protected_edges))
-    else:
-        # Graph already disconnected, use connected components
-        protected_edges = set()
-        for component in nx.connected_components(G):
-            if len(component) > 1:
-                subgraph = G.subgraph(component)
-                spanning_tree = nx.minimum_spanning_tree(subgraph)
-                tree_edges = list(spanning_tree.edges())
-                # Add both directions for undirected graph
-                protected_edges.update(tree_edges)
-                protected_edges.update((v, u) for u, v in tree_edges)
-    
-    # Build mask: keep protected edges, randomly drop others
-    mask = torch.ones(edge_index.size(1), dtype=torch.bool)
-    for i in range(edge_index.size(1)):
-        u, v = edge_index[0, i].item(), edge_index[1, i].item()
-        edge = (u, v)
-        
-        if edge not in protected_edges:
-            # This edge is not critical for connectivity, can drop it
-            if torch.rand(1).item() < drop_prob:
-                mask[i] = False
-    
-    if device is not None:
-        mask = mask.to(device)
-    
-    return edge_index[:, mask]
+    return apply_edge_dropout(
+        edge_index,
+        drop_prob,
+        preserve_connectivity=preserve_connectivity,
+        device=device,
+    )
+
+
+def validate_run_args(args):
+    if getattr(args, "policy", "PPO") != "PPO":
+        raise ValueError(
+            "Sileo v1 supports PPO only; paper-style REINFORCE is not implemented"
+        )
+    if getattr(args, "use_value_clip", False) or getattr(
+        args, "adaptive_kl_penalty", False
+    ):
+        raise ValueError(
+            "value clipping and adaptive KL are unsupported in Sileo v1"
+        )
+    return args
 
 
 def linear_schedule(epoch, warmup, span, start, end):
@@ -245,6 +202,7 @@ class DummyWriter:
 class Runner:
 
     def __init__(self, args):
+        validate_run_args(args)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.args = args
         # Track empty edge index warnings to avoid flooding logs
@@ -261,6 +219,7 @@ class Runner:
         self.ground_truth_labels = ground_truth_labels
         # Load pretrained models
         self.trained_model, checkpoint = model_selector.model_selector(args.model, args.dataset, pretrained=True, return_checkpoint=True)
+        self.predictor_checkpoint = checkpoint
         # Move model to GPU
         self.trained_model = self.trained_model.to(self.device)
         # Load ground truth
@@ -295,12 +254,14 @@ class Runner:
                         max_size_in_sg = len(subgraph_node)
             self.pretrain_nodes = np.array(self.pretrain_nodes, dtype=object)
 
-            self.graphs = Graph(self.graphs)
+            self.graphs = Graph(self.graphs, n_nodes=self.nodefeats.size(0))
             # Move graph edge_index to GPU
             self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
             edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
-            whole_graph_original_preds = self.trained_model(self.nodefeats, self.graphs.edge_index, edge_weights)
+            whole_graph_original_preds = self.trained_model(
+                self.nodefeats, self.graphs.edge_index, edge_weights=edge_weights
+            )
             whole_graph_original_preds = torch.argmax(whole_graph_original_preds, 1)
             # Move ground_truth_labels to same device as predictions
             ground_truth_labels_device = ground_truth_labels.to(whole_graph_original_preds.device)
@@ -309,7 +270,9 @@ class Runner:
             subg_original_preds = []
             for i, es in enumerate(self.eval_seeds):
                 edge_weights = torch.ones(self.subgraphs[i].size(1), device=self.subgraphs[i].device)
-                pred = self.trained_model(self.nodefeats, self.subgraphs[i], edge_weights)[es]
+                pred = self.trained_model(
+                    self.nodefeats, self.subgraphs[i], edge_weights=edge_weights
+                )[es]
                 subg_original_preds.append(pred)
             subg_original_preds = torch.stack(subg_original_preds)
             subg_original_preds = torch.argmax(subg_original_preds, 1)
@@ -319,7 +282,9 @@ class Runner:
 
             self.original_preds = whole_graph_original_preds
             edge_weights = torch.ones(self.graphs.edge_index.size(1), device=self.graphs.edge_index.device)
-            self.original_embeds = self.trained_model.embedding(self.nodefeats, self.graphs.edge_index, edge_weights)            
+            self.original_embeds = self.trained_model.embedding(
+                self.nodefeats, self.graphs.edge_index, edge_weights=edge_weights
+            )
 
             print("N-hop", self.args.n_hop, flush=True)
             print("Max Size in SG", max_size_in_sg, flush=True)
@@ -371,7 +336,7 @@ class Runner:
             
             each_g_start_eid.append(len(new_graphs_0))
             new_graphs = np.array([new_graphs_0, new_graphs_1])
-            self.graphs = Graph(new_graphs)
+            self.graphs = Graph(new_graphs, n_nodes=cur_node_id)
             # Move graph edge_index to GPU
             self.graphs.edge_index = self.graphs.edge_index.to(self.device)
 
@@ -492,9 +457,18 @@ class Runner:
         # writer = SummaryWriter(savedir / 'tb')
         writer = DummyWriter()
         with open(savedir / 'settings.json', 'w') as fh:
-            arg_dict = vars(args)
-            arg_dict['model'] = 'RGExplainer_v1'
+            arg_dict = dict(vars(args))
+            arg_dict['predictor_model'] = args.model
+            arg_dict['explainer_model'] = 'Sileo_v1'
+            arg_dict['predictor_accuracy'] = {
+                key: self.predictor_checkpoint.get(key)
+                for key in ('train_acc', 'val_acc', 'test_acc')
+            }
+            arg_dict['source_revision'] = subprocess.check_output(
+                ['git', 'rev-parse', 'HEAD'], text=True
+            ).strip()
             json.dump(arg_dict, fh, sort_keys=True, indent=4)
+        self.metrics_path = savedir / 'training_metrics.jsonl'
         pretrain_dir = pathlib.Path('pretrained')
         pretrain_dir.mkdir(exist_ok=True)
         return savedir, pretrain_dir, writer
@@ -556,6 +530,8 @@ class Runner:
                       n_rollouts=args.n_rollouts,
                       max_size=args.max_size,
                       max_reward=5.,
+                      ppo_epochs=args.ppo_epochs,
+                      minibatch_size=args.minibatch_size,
                       # New parameters for STOP action and penalties
                       target_size_k=args.target_size_k,
                       lambda_size=args.lambda_size,
@@ -611,6 +587,30 @@ class Runner:
                       entropy_decay_fraction=args.entropy_decay_fraction)
         if args.with_attr: 
             g.load_nodefeats(self.nodefeats)
+
+        predictor_batch = None
+        if self.task == "graph_task":
+            predictor_batch = torch.as_tensor(
+                self.n_to_g_index, dtype=torch.long, device=device
+            )
+            predictor_targets = [
+                self.each_g_start_nid[int(graph_id)]
+                for graph_id in self.eval_seeds
+            ]
+        else:
+            predictor_targets = list(self.eval_seeds)
+        predictor = PredictorAdapter(
+            self.trained_model,
+            self.nodefeats,
+            self.graphs.edge_index,
+            self.task,
+            batch=predictor_batch,
+        )
+        g.set_predictor(
+            predictor,
+            instance_ids=list(self.eval_seeds),
+            target_nodes=predictor_targets,
+        )
         
         # Initialize causal reward calculator
         g.init_causal_reward_calculator(self.trained_model)
@@ -688,21 +688,35 @@ class Runner:
         return (o_g, mask)
 
     def eval_loss(self, cs):
+        args = self.args
         cs = [x[:-1] if x[-1] == 'EOS' else x for x in cs]
         batch_g = [self.prepare_graph(i, x) for i, x in enumerate(cs)]
         
-        # Prediction loss
-        if self.task == "node_task":
-            masked_preds = [self.trained_model(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
-            original_preds = [self.original_preds[x[0]] for i, x in enumerate(cs)]
-        else:
-            batch_g_id = [self.get_g_id(x, True) for x in cs]
-            masked_preds = [self.trained_model(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
-            original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
-        
-
-        masked_preds = torch.stack(masked_preds).squeeze()
-        original_preds = torch.stack(original_preds)
+        predictions = []
+        originals = []
+        batch_g_id = []
+        for nodes in cs:
+            seed = int(nodes[0])
+            graph_id = (
+                int(self.n_to_g_index[seed])
+                if self.task == 'graph_task' else seed
+            )
+            batch_g_id.append(graph_id)
+            original = self.g.predictor.original(
+                instance_id=graph_id, target_node=seed
+            )
+            predictions.append(self.g.predictor.predict(
+                nodes,
+                instance_id=graph_id,
+                target_node=seed,
+                target_class=original.target_class,
+            ))
+            originals.append(original)
+        masked_preds = torch.stack([item.logits for item in predictions])
+        original_preds = torch.tensor(
+            [item.target_class for item in originals],
+            device=masked_preds.device,
+        )
 
         prediction_loss = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
         prediction_loss = prediction_loss.detach().cpu().numpy()
@@ -726,14 +740,10 @@ class Runner:
 
         # Similarity loss
         if args.sim_reg > 0:
-            if self.task == "node_task":
-                masked_embeds = [self.trained_model.embedding(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
-                sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
-                sim_loss = args.sim_reg * torch.stack(sim_loss)
-            else:
-                masked_embeds = [self.trained_model.graph_embedding(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id])[0].squeeze(0) for g_id, g in zip(batch_g_id, batch_g)]
-                sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
-                sim_loss = args.sim_reg * torch.stack(sim_loss)
+            sim_loss = args.sim_reg * torch.stack([
+                torch.norm(prediction.embedding - original.embedding)
+                for prediction, original in zip(predictions, originals)
+            ])
             sim_loss = sim_loss.detach().cpu().numpy()
         else:
             sim_loss = np.array([0.0]*len(prediction_loss))
@@ -781,6 +791,79 @@ class Runner:
 
         auc_score = self.auc_eval.get_score(explanations)
         print(f'[EVAL-{prefix}] AUC={auc_score}', flush=True)
+        explanation_path = self.savedir / 'explanations.jsonl'
+        record_indices = (
+            list(range(len(pred_sgs)))
+            if self.task == 'node_task'
+            else list(self.graph_eval_seeds)
+        )
+        with explanation_path.open('a') as handle:
+            for record_position, index in enumerate(record_indices):
+                nodes = pred_sgs[index]
+                if not nodes:
+                    continue
+                seed = int(nodes[0])
+                instance_id = (
+                    int(self.n_to_g_index[seed])
+                    if self.task == 'graph_task' else seed
+                )
+                original = self.g.predictor.original(
+                    instance_id=instance_id, target_node=seed
+                )
+                selected = self.g.predictor.predict(
+                    nodes,
+                    instance_id=instance_id,
+                    target_node=seed,
+                    target_class=original.target_class,
+                )
+                target = original.target_class
+                node_set = set(int(node) for node in nodes)
+                selected_edges = [
+                    [int(u), int(v)]
+                    for u, v in self.graphs.edge_index.t().tolist()
+                    if int(u) in node_set and int(v) in node_set
+                ]
+                record = {
+                    'evaluation': prefix,
+                    'instance_id': instance_id,
+                    'target_node': seed,
+                    'target_class': target,
+                    'selected_nodes': [int(node) for node in nodes],
+                    'selected_edges': selected_edges,
+                    'edge_scores': (
+                        np.asarray(explanations[record_position]).tolist()
+                        if record_position < len(explanations) else []
+                    ),
+                    'original_confidence': float(
+                        torch.softmax(original.logits, -1)[target]
+                    ),
+                    'selected_confidence': float(
+                        torch.softmax(selected.logits, -1)[target]
+                    ),
+                    'deleted_edge_confidence': float(
+                        torch.softmax(
+                            self.g.predictor.without_selected_edges(
+                                nodes,
+                                instance_id=instance_id,
+                                target_node=seed,
+                                target_class=target,
+                            ).logits,
+                            -1,
+                        )[target]
+                    ),
+                    'class_agreement': bool(
+                        selected.logits.argmax() == original.logits.argmax()
+                    ),
+                    'size': len(nodes),
+                    'connected': len(
+                        self.graphs.connected_components(nodes)
+                    ) == 1,
+                    'roc_auc': (
+                        float(auc_score) if np.isfinite(auc_score) else None
+                    ),
+                    'average_precision': None,
+                }
+                handle.write(json.dumps(record, sort_keys=True) + '\n')
 
         return auc_score
 
@@ -899,20 +982,33 @@ class Runner:
             return ptgeom.utils.subgraph(selected_nodes, self.graphs.edge_index)[0]
 
     def score_fn(self, cs):
+        args = self.args
         cs = [x[:-1] if x[-1] == 'EOS' else x for x in cs]
         batch_g = [self.prepare_graph(i, x) for i, x in enumerate(cs)]
         
-        # Prediction loss
-        if self.task == "node_task":
-            masked_preds = [self.trained_model(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
-            original_preds = [self.original_preds[x[0]] for i, x in enumerate(cs)]
-        else:
-            batch_g_id = [self.get_g_id(x, True) for x in cs]
-            masked_preds = [self.trained_model(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id]) for g_id, g in zip(batch_g_id, batch_g)]
-            original_preds = [self.original_preds[g_id] for g_id in batch_g_id]
-
-        masked_preds = torch.stack(masked_preds).squeeze()
-        original_preds = torch.stack(original_preds)
+        predictions = []
+        originals = []
+        for nodes in cs:
+            seed = int(nodes[0])
+            graph_id = (
+                int(self.n_to_g_index[seed])
+                if self.task == 'graph_task' else seed
+            )
+            original = self.g.predictor.original(
+                instance_id=graph_id, target_node=seed
+            )
+            predictions.append(self.g.predictor.predict(
+                nodes,
+                instance_id=graph_id,
+                target_node=seed,
+                target_class=original.target_class,
+            ))
+            originals.append(original)
+        masked_preds = torch.stack([item.logits for item in predictions])
+        original_preds = torch.tensor(
+            [item.target_class for item in originals],
+            device=masked_preds.device,
+        )
 
         v = torch.nn.functional.cross_entropy(masked_preds, original_preds, reduction='none') 
 
@@ -926,12 +1022,10 @@ class Runner:
 
         # Similarity loss
         if args.sim_reg > 0:
-            if self.task == "node_task":
-                masked_embeds = [self.trained_model.embedding(self.nodefeats, g)[cs[i][0]] for i, g in enumerate(batch_g)]
-                sim_loss = [torch.norm(masked_embeds[i] - self.original_embeds[x[0]]) for i, x in enumerate(cs)]
-            else:
-                masked_embeds = [self.trained_model.graph_embedding(self.ind_nodefeats[g_id], g - self.each_g_start_nid[g_id])[0].squeeze(0) for g_id, g in zip(batch_g_id, batch_g)]
-                sim_loss = [torch.norm(masked_embeds[i] - self.g_embeds[g_id]) for i, g_id in enumerate(batch_g_id)]
+            sim_loss = [
+                torch.norm(prediction.embedding - original.embedding)
+                for prediction, original in zip(predictions, originals)
+            ]
             v += args.sim_reg * torch.stack(sim_loss) 
         
         
@@ -939,23 +1033,73 @@ class Runner:
 
 
     def save(self, fname):
-        if self.task == "node_task":
-            data = {'g': self.g.model.state_dict()}
-        else: #graph_task
-            data = {'g': self.g.model.state_dict(),
-                    'l': self.l.model.state_dict()}
+        data = {
+            'g': self.g.model.state_dict(),
+            'g_optimizer': self.g.optimizer.state_dict(),
+            'epoch': self.g.current_epoch,
+            'config': dict(vars(self.args)),
+            'rng': {
+                'python': random.getstate(),
+                'numpy': np.random.get_state(),
+                'torch': torch.get_rng_state(),
+                'cuda': (
+                    torch.cuda.get_rng_state_all()
+                    if torch.cuda.is_available() else None
+                ),
+            },
+        }
+        if self.task == "graph_task":
+            data['l'] = self.l.model.state_dict()
+            data['l_optimizer'] = self.l.optimizer.state_dict()
         
         torch.save(data, fname)
 
     def load(self, fname):
         # Load model with appropriate device mapping
         if torch.cuda.is_available():
-            data = torch.load(fname)
+            data = torch.load(fname, weights_only=False)
         else:
-            data = torch.load(fname, map_location=torch.device('cpu'))
+            data = torch.load(
+                fname,
+                map_location=torch.device('cpu'),
+                weights_only=False,
+            )
         self.g.model.load_state_dict(data['g'])
+        if 'g_optimizer' in data:
+            self.g.optimizer.load_state_dict(data['g_optimizer'])
+        self.g.current_epoch = int(data.get('epoch', 0))
         if self.task == "graph_task":
             self.l.model.load_state_dict(data['l'])
+            if 'l_optimizer' in data:
+                self.l.optimizer.load_state_dict(data['l_optimizer'])
+        rng = data.get('rng')
+        if rng:
+            random.setstate(rng['python'])
+            np.random.set_state(rng['numpy'])
+            torch.set_rng_state(rng['torch'])
+            if torch.cuda.is_available() and rng.get('cuda') is not None:
+                torch.cuda.set_rng_state_all(rng['cuda'])
+
+    def log_metrics(self, record):
+        with self.metrics_path.open('a') as handle:
+            handle.write(json.dumps(record, sort_keys=True) + '\n')
+
+    def evaluate_with_isolated_rng(self, label):
+        python_state = random.getstate()
+        numpy_state = np.random.get_state()
+        torch_state = torch.get_rng_state()
+        cuda_state = (
+            torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+        )
+        seed_all(self.args.seed + 1_000_003)
+        try:
+            return self.evaluate_and_print(label)
+        finally:
+            random.setstate(python_state)
+            np.random.set_state(numpy_state)
+            torch.set_rng_state(torch_state)
+            if cuda_state is not None:
+                torch.cuda.set_rng_state_all(cuda_state)
 
     
     def simulated_return_a_subgraph(self, seeds):
@@ -1010,46 +1154,30 @@ class Runner:
 
     def pretrain(self):
         args = self.args
-        arg_dict = vars(args)
+        arg_dict = dict(vars(args))
         pretrain_related_args = ['pretrain_list', 'pretrain_set', 'pretrain_l_iter', 'pretrain_l_sample_rate', 
                                 'hidden_size', 'dataset', 'seed', 'max_size', 'n_hop', 
-                                'l_lr', 'g_lr',  'pretrain_g_batch_size', 'with_attr', 'ds_name', 'random_edge_drop']
-        # Add PPO hyperparameters to hash calculation using actual arguments
-        ppo_hyperparams = {
-            # Core PPO parameters
-            'gamma': args.gamma,
-            'clip_range': args.clip_eps, 
-            'vf_clip': args.vf_clip,
-            'ppo_epochs': args.ppo_epochs,
-            'minibatch_size': args.minibatch_size,
-            'use_gae': args.use_gae,
-            'gae_lambda': args.gae_lambda,
-            'reward_norm': args.reward_norm,
-            
-            'clip_range_policy': args.clip_range_policy,
-            'clip_range_value': args.clip_range_value,
-            'adaptive_kl_penalty': args.adaptive_kl_penalty,
-            'kl_target': args.kl_target,
-            'ppo_clip': args.ppo_clip,
-            'grad_clip': args.grad_clip,
-            'max_grad_norm': args.max_grad_norm,
-            'use_value_clip': args.use_value_clip,
-            
-            # Entropy scheduling parameters
-            'entropy_decay_start': args.entropy_decay_start,
-            'entropy_decay_end': args.entropy_decay_end,
-            'entropy_decay_final': args.entropy_decay_final,
-            'entropy_coeff_start': args.entropy_coeff_start,
-            'entropy_coeff_end': args.entropy_coeff_end,
-            
-            # Other PPO-related parameters
-            'frontier_shaping_beta': args.frontier_shaping_beta,
-            'debug_mode': args.debug_mode
-        }
-        for key, value in ppo_hyperparams.items():
-            arg_dict[key] = value
-        code = ' '.join([str(arg_dict[k]) for k in pretrain_related_args])
-        code = hashlib.md5(code.encode('utf-8')).hexdigest().upper()
+                                'l_lr', 'lr', 'pretrain_g_batch_size',
+                                'with_attr', 'ds_name']
+        cache_manifest = {key: arg_dict[key] for key in pretrain_related_args}
+        cache_manifest['source_revision'] = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], text=True
+        ).strip()
+        cache_manifest['source_diff_hash'] = hashlib.sha256(
+            subprocess.check_output(['git', 'diff', '--binary'])
+        ).hexdigest()
+        digest = hashlib.sha256()
+        for key, tensor in sorted(self.trained_model.state_dict().items()):
+            digest.update(key.encode())
+            digest.update(tensor.detach().cpu().numpy().tobytes())
+        cache_manifest['predictor_hash'] = digest.hexdigest()
+        digest = hashlib.sha256()
+        digest.update(self.graphs.edge_index.detach().cpu().numpy().tobytes())
+        digest.update(self.nodefeats.detach().cpu().numpy().tobytes())
+        cache_manifest['data_hash'] = digest.hexdigest()
+        code = hashlib.sha256(
+            json.dumps(cache_manifest, sort_keys=True).encode()
+        ).hexdigest().upper()
         print(f'CODE: {code}', flush=True)
         pth_fname = self.pretrain_dir / f'{code}.pth'
         if pth_fname.exists():
@@ -1182,13 +1310,20 @@ class Runner:
               f'EarlyStopRate={early_stop_rate:.3f}',
               f'AvgSize={avg_size:.1f}', flush=True)
         
-        return {
+        metrics = {
             'reward': r,
             'policy_loss': policy_loss,
             'length': length,
             'early_stop_rate': early_stop_rate,
             'avg_size': avg_size
         }
+        metrics.update(self.g.last_training_stats)
+        metrics.update(self.g.last_rollout_metrics)
+        if self.g.causal_reward_calculator is not None:
+            metrics['causal'] = dict(
+                self.g.causal_reward_calculator.diagnostics
+            )
+        return metrics
 
 
     def train_l(self, l_epochs, sample_rate):
@@ -1229,7 +1364,8 @@ class Runner:
         self.pretrain()
         if self.task == "graph_task":
             self.eval_seeds = self.l.get_eval_seed_deterministic()
-            self.evaluate_and_print('Pretrained')
+            print('Locator mode: fixed after pretraining', flush=True)
+            self.evaluate_with_isolated_rng('Pretrained')
         
         # Train
         g_it = l_it = -1
@@ -1271,6 +1407,22 @@ class Runner:
 
             print('Update G', flush=True)
             stats = self.train_g_step(g_it, lam_size=lam_size, lam_radius=lam_radius, lam_sim=lam_sim, entropy_coef=entropy_c)
+            serializable_stats = {
+                key: (
+                    float(value.item())
+                    if torch.is_tensor(value)
+                    else value
+                )
+                for key, value in stats.items()
+            }
+            self.log_metrics({
+                'epoch': i_epoch + 1,
+                'lambda_size': lam_size,
+                'lambda_radius': lam_radius,
+                'lambda_similarity': lam_sim,
+                'entropy_coefficient': entropy_c,
+                **serializable_stats,
+            })
             g_it += 1
 
             toc = time.time()
@@ -1283,7 +1435,7 @@ class Runner:
 
             # Eval
             if (i_epoch + 1) % self.args.eval_every == 0:
-                auc = self.evaluate_and_print(f'Epoch {i_epoch+1:4d}')
+                auc = self.evaluate_with_isolated_rng(f'Epoch {i_epoch+1:4d}')
                 metrics_string = '_'.join([f'{x * 100:0>2.0f}' for x in [auc]])
                 self.save(self.savedir / f'{i_epoch + 1:0>5d}_{metrics_string}.pth')
                 self.writer.add_scalar('Eval/Auc', auc, i_epoch)
@@ -1332,6 +1484,7 @@ if __name__ == '__main__':
     # Dataset + Trained Model 
     parser.add_argument('--dataset', type=str, default='syn1') # syn1/syn2/syn3/syn4/ba2/mutag
     parser.add_argument('--model', type=str, default='GNN')
+    parser.add_argument('--savedir', type=str, default=None)
 
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--with_attr', action='store_true', default=True)
@@ -1371,7 +1524,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_every', type=int, default=1)
 
     # Policy selection
-    parser.add_argument('--policy', type=str, choices=['REINFORCE', 'PPO'], default='REINFORCE')
+    parser.add_argument('--policy', type=str, choices=['REINFORCE', 'PPO'], default='PPO')
     
     # PPO-specific parameters
     parser.add_argument('--ppo_epochs', type=int, default=4)
@@ -1428,7 +1581,7 @@ if __name__ == '__main__':
                        help='GAE lambda parameter')
     parser.add_argument('--max_grad_norm', type=float, default=0.5,
                        help='Maximum gradient norm for clipping')
-    parser.add_argument('--use_value_clip', action='store_true', default=True,
+    parser.add_argument('--use_value_clip', action='store_true', default=False,
                        help='Enable value function clipping')
 
     # Entropy scheduling (moved to Reward shaping & schedules section)
@@ -1513,7 +1666,9 @@ if __name__ == '__main__':
     print('= ' * 20)
     now = datetime.datetime.now()
     print(args)
-    args.savedir = f'ckpts/{args.dataset}/{now.strftime("%Y%m%d%H%M%S")}/'
+    if args.savedir is None:
+        run_id = f"{now.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
+        args.savedir = f'ckpts/{args.dataset}/{run_id}/'
     print('##  Starting Time:', now.strftime("%Y-%m-%d %H:%M:%S"), flush=True)
     print(f'##  Seed: {args.seed}, Deterministic: {torch.backends.cudnn.deterministic}', flush=True)
     main(args)

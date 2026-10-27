@@ -8,10 +8,15 @@ not policy behavior.
 
 import torch
 import networkx as nx
-import numpy as np
 
 
-def apply_edge_dropout(edge_index, drop_prob, preserve_connectivity=False, device=None):
+def apply_edge_dropout(
+    edge_index,
+    drop_prob,
+    preserve_connectivity=False,
+    device=None,
+    generator=None,
+):
     """
     Apply edge dropout to a graph's edge_index.
     
@@ -39,50 +44,32 @@ def apply_edge_dropout(edge_index, drop_prob, preserve_connectivity=False, devic
     if device is None:
         device = edge_index.device
     
-    if not preserve_connectivity:
-        # Simple random dropping (fast)
-        mask = (torch.rand(edge_index.size(1), device=device) > drop_prob)
-        return edge_index[:, mask]
-    
-    # Connectivity-preserving edge dropping (slower but safer)
-    # Strategy: Build a spanning tree first, then randomly drop from remaining edges
-    
-    # Convert to numpy for networkx
-    edges_np = edge_index.cpu().numpy().T
-    
-    # Build undirected graph (remove duplicate edges for undirected)
+    edges_np = edge_index.detach().cpu().numpy().T
     G = nx.Graph()
     G.add_edges_from(edges_np)
-    
-    # Get a spanning tree to maintain connectivity
-    if nx.is_connected(G):
-        spanning_tree = nx.minimum_spanning_tree(G)
-        protected_edges = set(spanning_tree.edges())
-        # Add reverse edges for undirected graph (make a copy first to avoid iteration error)
-        protected_edges.update((v, u) for u, v in list(protected_edges))
-    else:
-        # Graph already disconnected, use connected components
-        protected_edges = set()
+    protected_pairs = set()
+    if preserve_connectivity:
         for component in nx.connected_components(G):
             if len(component) > 1:
                 subgraph = G.subgraph(component)
                 spanning_tree = nx.minimum_spanning_tree(subgraph)
-                tree_edges = list(spanning_tree.edges())
-                # Add both directions for undirected graph
-                protected_edges.update(tree_edges)
-                protected_edges.update((v, u) for u, v in tree_edges)
-    
-    # Build mask: keep protected edges, randomly drop others
+                protected_pairs.update(
+                    (min(int(u), int(v)), max(int(u), int(v)))
+                    for u, v in spanning_tree.edges()
+                )
+
+    pair_to_indices = {}
+    for index, (u, v) in enumerate(edges_np):
+        pair = (min(int(u), int(v)), max(int(u), int(v)))
+        pair_to_indices.setdefault(pair, []).append(index)
+
     mask = torch.ones(edge_index.size(1), dtype=torch.bool, device=device)
-    for i in range(edge_index.size(1)):
-        u, v = edge_index[0, i].item(), edge_index[1, i].item()
-        edge = (u, v)
-        
-        if edge not in protected_edges:
-            # This edge is not critical for connectivity, can drop it
-            if torch.rand(1).item() < drop_prob:
-                mask[i] = False
-    
+    for pair, indices in pair_to_indices.items():
+        if pair in protected_pairs:
+            continue
+        draw = torch.rand((), device=device, generator=generator)
+        if bool(draw < drop_prob):
+            mask[torch.as_tensor(indices, device=device)] = False
     return edge_index[:, mask]
 
 

@@ -8,10 +8,14 @@ import torch
 
 class Graph:
 
-    def __init__(self, edges):
-        self.edge_index = torch.tensor(edges)
-        edges = edges.T
-        self.neighbors, self.n_nodes, self.adj_mat, self.isolated_nodes = self._init_from_edges(edges)
+    def __init__(self, edges, n_nodes=None):
+        self.edge_index = torch.as_tensor(edges, dtype=torch.long)
+        if self.edge_index.ndim != 2 or self.edge_index.shape[0] != 2:
+            raise ValueError("edges must have shape [2, num_edges]")
+        rows = self.edge_index.cpu().numpy().T
+        self.neighbors, self.n_nodes, self.adj_mat, self.isolated_nodes = (
+            self._init_from_edges(rows, n_nodes=n_nodes)
+        )
 
     @classmethod
     def from_dropped_edges(cls, original_graph, drop_prob, preserve_connectivity=False):
@@ -49,15 +53,16 @@ class Graph:
             device=original_graph.edge_index.device
         )
         
-        # Handle edge case: if all edges were dropped, return original graph
-        if dropped_edge_index.size(1) == 0:
-            return original_graph
-        
         # Create new Graph from dropped edges
-        return cls(dropped_edge_index.cpu().numpy())
+        return cls(
+            dropped_edge_index.cpu().numpy(),
+            n_nodes=original_graph.n_nodes,
+        )
 
     @staticmethod
-    def _init_from_edges(edges: np.ndarray) -> (Dict[int, Set[int]], int, sp.spmatrix):
+    def _init_from_edges(
+        edges: np.ndarray, n_nodes: Optional[int] = None
+    ) -> (Dict[int, Set[int]], int, sp.spmatrix):
         neighbors = collections.defaultdict(set)
         max_id = -1
         for u, v in edges:
@@ -65,18 +70,25 @@ class Graph:
             if u != v:
                 neighbors[u].add(v)
                 neighbors[v].add(u)
-        n_nodes = len(neighbors)
-        isolated_nodes = []
-        if (max_id + 1) != n_nodes:
-            print("There exists isolated nodes! Some nodes do not have edges")
-            for i in range(max_id + 1):
-                if i not in neighbors:
-                    isolated_nodes.append(i)
-
-        n_nodes = max_id + 1
-        adj_mat = sp.csr_matrix((np.ones(len(edges)), edges.T), shape=(max_id + 1, max_id + 1))
+        inferred_nodes = max_id + 1
+        if n_nodes is None:
+            n_nodes = inferred_nodes
+        if n_nodes < inferred_nodes:
+            raise ValueError(
+                f"n_nodes={n_nodes} cannot contain node id {max_id}"
+            )
+        for node in range(n_nodes):
+            neighbors[node]
+        isolated_nodes = {
+            node for node in range(n_nodes) if not neighbors[node]
+        }
+        if len(edges):
+            adj_mat = sp.csr_matrix(
+                (np.ones(len(edges)), edges.T), shape=(n_nodes, n_nodes)
+            )
+        else:
+            adj_mat = sp.csr_matrix((n_nodes, n_nodes), dtype=np.float32)
         adj_mat += adj_mat.T
-        isolated_nodes = set(isolated_nodes)
         return neighbors, n_nodes, adj_mat, isolated_nodes
 
     def outer_boundary(self, nodes: Union[List, Set]) -> Set[int]:

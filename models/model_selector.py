@@ -181,22 +181,20 @@ def model_selector(paper, dataset, pretrained=True, return_checkpoint=False):
         mapped_state_dict = map_checkpoint_keys(checkpoint['model_state_dict'])
         
         try:
-            model.load_state_dict(mapped_state_dict)
-            print(f"This model obtained: Train Acc: {checkpoint['train_acc']:.4f}, Val Acc: {checkpoint['val_acc']:.4f}, Test Acc: {checkpoint['test_acc']:.4f}.")
-        except RuntimeError as e:
-            print(f"Warning: Could not load pretrained model: {e}")
-            
-            # Print diagnostic information
-            print("\nDiagnostic Info:")
-            print("Checkpoint keys and shapes:")
-            for key, value in mapped_state_dict.items():
-                print(f"  {key}: {value.shape}")
-            
-            print("\nModel expected keys and shapes:")
-            for key, param in model.state_dict().items():
-                print(f"  {key}: {param.shape}")
-            
-            print("\nContinuing with randomly initialized model...")
+            model.load_state_dict(mapped_state_dict, strict=True)
+        except RuntimeError as error:
+            raise RuntimeError(
+                f"incompatible pretrained predictor checkpoint {path!s} "
+                f"for model={paper!r}, dataset={dataset!r}"
+            ) from error
+        model.eval()
+        for parameter in model.parameters():
+            parameter.requires_grad_(False)
+        print(
+            f"This model obtained: Train Acc: {checkpoint['train_acc']:.4f}, "
+            f"Val Acc: {checkpoint['val_acc']:.4f}, "
+            f"Test Acc: {checkpoint['test_acc']:.4f}."
+        )
         
         if return_checkpoint:
             return model, checkpoint
